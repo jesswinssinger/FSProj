@@ -1,4 +1,5 @@
 # CS137 Final Project
+## A Student-Centric Versioning File System With Autosave
 We hope to implement a simple versioning file system that supports configurable auto-saving. The high-level design strategy consists of implementing checkpoints and snapshots similar to implementations we have read in papers in class, but only at the file level.
   
 ## Purpose
