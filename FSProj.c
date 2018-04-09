@@ -37,6 +37,23 @@
 #include <sys/xattr.h>
 #endif
 
+typedef struct sdir {
+	size_t size;
+	/* Strings of the form "a[.b[.c[...]]]" where {a,b,c,...} are
+	positive natural numbers */
+	// TODO: write a grammar that checks it as valid
+	char *ver;
+	sdir *children;
+};
+
+typedef struct supersdir {
+	mode_t mode;
+	int v_count;
+	char *ver_curr;
+	char *file_name;
+	sdir *root;
+};
+
 static int sfs_getattr(const char *path, struct stat *stbuf)
 {
 	int res;
