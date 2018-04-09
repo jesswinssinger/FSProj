@@ -67,22 +67,21 @@ typedef unsigned long  u_long;
 
 #endif /* __APPLE__ */
 
-typedef struct sdir {
-	size_t size;
-	/* Strings of the form "a[.b[.c[...]]]" where {a,b,c,...} are
-	positive natural numbers */
-	// TODO: write a grammar that checks it as valid
-	char *ver;
-	sdir *children;
-};
+typedef struct Sdir {
+	char* ver_num; 	  //< Version number
+	uint64_t sfh; 	  //< File handle of snapfile
+	mode_t smode;	  //< Mode for snapfile
+	size_t ssize;	  //< Size of snapfile
+	size_t size;	  //< ssize + size of subtree
+	size_t entry_cnt; //< # of entries
+} Sdir;
 
-typedef struct supersdir {
-	mode_t mode;
-	int v_count;
-	char *ver_curr;
-	char *file_name;
-	sdir *root;
-};
+typedef struct SuperSdir {
+	char* fname;    	//< Name of file
+	size_t s_count; 	//< # of snapshots
+	char* curr_ver;		//< Current version
+	uint64_t curr_fh;	//< Current version file handle
+} SuperSdir;
 
 static int sfs_getattr(const char *path, struct stat *stbuf)
 {
