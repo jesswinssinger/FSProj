@@ -18,4 +18,9 @@ The process of designing this file system will likely bottleneck at deciding how
 More up-to-date information can be found in the wiki.
 
 ## References/Credits
-Some of our code was taken from Miklos Szeredi's file fusexmp_fh.c.
+Some of our code was taken from Miklos Szeredi's file fusexmp_fh.c:
+    fuse-2.8.7.tar.gz examples directory
+        Used as FUSE basis for our features to be built on top of Unix.
+        Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+        Copyright (C) 2011       Sebastian Pipping <sebastian@pipping.org>
+    fusexmp_fh.c can be distributed under the terms of the GNU GPL.

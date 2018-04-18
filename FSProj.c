@@ -45,28 +45,6 @@
 
 #include <sys/param.h>
 
-#ifdef __APPLE__
-
-#include <fcntl.h>
-#include <sys/vnode.h>
-
-#if defined(_POSIX_C_SOURCE)
-typedef unsigned char  u_char;
-typedef unsigned short u_short;
-typedef unsigned int   u_int;
-typedef unsigned long  u_long;
-#endif
-
-#include <sys/attr.h>
-
-#define G_PREFIX			"org"
-#define G_KAUTH_FILESEC_XATTR G_PREFIX 	".apple.system.Security"
-#define A_PREFIX			"com"
-#define A_KAUTH_FILESEC_XATTR A_PREFIX 	".apple.system.Security"
-#define XATTR_APPLE_PREFIX		"com.apple."
-
-#endif /* __APPLE__ */
-
 typedef struct Sdir {
 	char* ver_num; 	  //< Version number
 	uint64_t sfh; 	  //< File handle of snapfile
@@ -78,7 +56,7 @@ typedef struct Sdir {
 
 typedef struct SuperSdir {
 	char* fname;    	//< Name of file
-	size_t scount; 	//< # of snapshots
+	size_t scount;		//< # of snapshots
 	char* curr_ver;		//< Current version
 	uint64_t curr_fh;	//< Current version file handle
 } SuperSdir;
@@ -493,45 +471,6 @@ static int studentfs_fsync(const char *path, int isdatasync,
 	return 0;
 }
 
-#if defined(HAVE_POSIX_FALLOCATE) || defined(__APPLE__)
-static int studentfs_fallocate(const char *path, int mode,
-			off_t offset, off_t length, struct fuse_file_info *fi)
-{
-#ifdef __APPLE__
-	fstore_t fstore;
-
-	if (!(mode & PREALLOCATE))
-		return -ENOTSUP;
-
-	fstore.fst_flags = 0;
-	if (mode & ALLOCATECONTIG)
-		fstore.fst_flags |= F_ALLOCATECONTIG;
-	if (mode & ALLOCATEALL)
-		fstore.fst_flags |= F_ALLOCATEALL;
-
-	if (mode & ALLOCATEFROMPEOF)
-		fstore.fst_posmode = F_PEOFPOSMODE;
-	else if (mode & ALLOCATEFROMVOL)
-		fstore.fst_posmode = F_VOLPOSMODE;
-
-	fstore.fst_offset = offset;
-	fstore.fst_length = length;
-
-	if (fcntl(fi->fh, F_PREALLOCATE, &fstore) == -1)
-		return -errno;
-	else
-		return 0;
-#else
-	(void) path;
-
-	if (mode)
-		return -EOPNOTSUPP;
-
-	return -posix_fallocate(fi->fh, offset, length);
-#endif
-}
-#endif
-
 #ifdef HAVE_SETXATTR
 /* xattr operations are optional and can safely be left unimplemented */
 #ifdef __APPLE__
@@ -722,9 +661,6 @@ static struct fuse_operations studentfs_oper = {
 	.flush		= studentfs_flush,
 	.release	= studentfs_release,
 	.fsync		= studentfs_fsync,
-#if defined(HAVE_POSIX_FALLOCATE) || defined(__APPLE__)
-	.fallocate	= studentfs_fallocate,
-#endif
 #ifdef HAVE_SETXATTR
 	.setxattr	= studentfs_setxattr,
 	.getxattr	= studentfs_getxattr,
