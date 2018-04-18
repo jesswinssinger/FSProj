@@ -34,6 +34,7 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/param.h>
+#include <string.h>
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
 #endif
@@ -541,22 +542,25 @@ char *_get_next_vnum(const char *path, char *vnum) {
 	}
 
 	// Make the sdir be a directory
-	chmod(path, (0755 | S_ISDIR));
+	chmod(path, (0755 | S_IFDIR));
 	int final_num = atoi(final_token);
 	char *final_path = malloc(MAX_VNUM_LEN);
+	char *final_num_str = malloc(MAX_VNUM_LEN);
+	itoa(final_num+1, final_num_str, 10);
 
 	// Increment the current version number by 1.
 	strcpy(final_path, path);
 	strcat(final_path, "/");
 	strcat(final_path, vnum_branch);
-	strcat(final_path, (const char *) itoa(final_num+1));
+	strcat(final_path, (const char *) final_num_str);
 	
 	// If there is already a child of the current directory, make a new branch (see Wiki research if this is confusing)
 	if (access(final_path, F_OK) != -1) {
 		strcpy(final_path, path);
 		strcat(final_path, "/");
 		strcat(final_path, vnum_branch);
-		strcat(final_path, (const char *) itoa(final_num));
+		itoa(final_num, final_num_str, 10);
+		strcat(final_path, (const char *) final_num_str);
 		strcat(final_path, ".1");
 		while (access(final_path, F_OK) != -1) {
 			final_path[strlen(final_path)-1] = '0';
@@ -566,7 +570,9 @@ char *_get_next_vnum(const char *path, char *vnum) {
 	
 	free(final_token);
 	free(res);
-	free(tokens);
+	for (int i = 0; i < MAX_VNUM_LEN; i++) {
+		free(tokens[i]);
+	}
 	free(vnum_branch);
 
 	return final_path;
@@ -579,7 +585,7 @@ char *get_next_vnum(const char *path) {
 	if (access(path, F_OK) == -1) {
 		return "1";
 	}
-	
+
 	int res = studentfs_getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
 	if (res < 0) {
 		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
