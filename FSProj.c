@@ -24,9 +24,6 @@
 #endif
 
 #include <fuse.h>
-#ifndef __APPLE__
-#include <ulockmgr.h>
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,9 +35,6 @@
 #include <sys/time.h>
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
-#endif
-#ifndef __APPLE__
-#include <sys/file.h> /* flock(2) */
 #endif
 
 #include <sys/param.h>
@@ -267,12 +261,7 @@ static int studentfs_link(const char *from, const char *to)
 static int studentfs_chmod(const char *path, mode_t mode)
 {
 	int res;
-
-#ifdef __APPLE__
-	res = lchmod(path, mode);
-#else
 	res = chmod(path, mode);
-#endif
 	if (res == -1)
 		return -errno;
 
@@ -473,56 +462,20 @@ static int studentfs_fsync(const char *path, int isdatasync,
 
 #ifdef HAVE_SETXATTR
 /* xattr operations are optional and can safely be left unimplemented */
-#ifdef __APPLE__
-static int studentfs_setxattr(const char *path, const char *name, const char *value,
-			size_t size, int flags, uint32_t position)
-#else
 static int studentfs_setxattr(const char *path, const char *name, const char *value,
 			size_t size, int flags)
-#endif
 {
-#ifdef __APPLE__
-	int res;
-	if (!strncmp(name, XATTR_APPLE_PREFIX, sizeof(XATTR_APPLE_PREFIX) - 1)) {
-		flags &= ~(XATTR_NOSECURITY);
-	}
-	if (!strcmp(name, A_KAUTH_FILESEC_XATTR)) {
-		char new_name[MAXPATHLEN];
-		memcpy(new_name, A_KAUTH_FILESEC_XATTR, sizeof(A_KAUTH_FILESEC_XATTR));
-		memcpy(new_name, G_PREFIX, sizeof(G_PREFIX) - 1);
-		res = setxattr(path, new_name, value, size, position, flags);
-	} else {
-		res = setxattr(path, name, value, size, position, flags);
-	}
-#else
 	int res = lsetxattr(path, name, value, size, flags);
-#endif
 	if (res == -1)
 		return -errno;
 	return 0;
 }
 
-#ifdef __APPLE__
-static int studentfs_getxattr(const char *path, const char *name, char *value,
-			size_t size, uint32_t position)
-#else
 static int studentfs_getxattr(const char *path, const char *name, char *value,
 			size_t size)
-#endif
 {
-#ifdef __APPLE__
-	int res;
-	if (strcmp(name, A_KAUTH_FILESEC_XATTR) == 0) {
-		char new_name[MAXPATHLEN];
-		memcpy(new_name, A_KAUTH_FILESEC_XATTR, sizeof(A_KAUTH_FILESEC_XATTR));
-		memcpy(new_name, G_PREFIX, sizeof(G_PREFIX) - 1);
-		res = getxattr(path, new_name, value, size, position, XATTR_NOFOLLOW);
-	} else {
-		res = getxattr(path, name, value, size, position, XATTR_NOFOLLOW);
-	}
-#else
 	int res = lgetxattr(path, name, value, size);
-#endif
+
 	if (res == -1)
 		return -errno;
 	return res;
@@ -530,35 +483,8 @@ static int studentfs_getxattr(const char *path, const char *name, char *value,
 
 static int studentfs_listxattr(const char *path, char *list, size_t size)
 {
-#ifdef __APPLE__
-	ssize_t res = listxattr(path, list, size, XATTR_NOFOLLOW);
-	if (res > 0) {
-		if (list) {
-			size_t len = 0;
-			char *curr = list;
-			do {
-				size_t thislen = strlen(curr) + 1;
-				if (strcmp(curr, G_KAUTH_FILESEC_XATTR) == 0) {
-					memmove(curr, curr + thislen, res - len - thislen);
-					res -= thislen;
-					break;
-				}
-				curr += thislen;
-				len += thislen;
-			} while (len < res);
-		} else {
-			/*
-			ssize_t res2 = getxattr(path, G_KAUTH_FILESEC_XATTR, NULL, 0, 0,
-						XATTR_NOFOLLOW);
-			if (res2 >= 0) {
-				res -= sizeof(G_KAUTH_FILESEC_XATTR);
-			}
-			*/
-		}
-	}
-#else
 	int res = llistxattr(path, list, size);
-#endif
+
 	if (res == -1)
 		return -errno;
 	return res;
@@ -566,43 +492,17 @@ static int studentfs_listxattr(const char *path, char *list, size_t size)
 
 static int studentfs_removexattr(const char *path, const char *name)
 {
-#ifdef __APPLE__
-	int res;
-	if (strcmp(name, A_KAUTH_FILESEC_XATTR) == 0) {
-		char new_name[MAXPATHLEN];
-		memcpy(new_name, A_KAUTH_FILESEC_XATTR, sizeof(A_KAUTH_FILESEC_XATTR));
-		memcpy(new_name, G_PREFIX, sizeof(G_PREFIX) - 1);
-		res = removexattr(path, new_name, XATTR_NOFOLLOW);
-	} else {
-		res = removexattr(path, name, XATTR_NOFOLLOW);
-	}
-#else
 	int res = lremovexattr(path, name);
-#endif
+
 	if (res == -1)
 		return -errno;
 	return 0;
 }
 #endif /* HAVE_SETXATTR */
 
-#ifndef __APPLE__
-static int studentfs_lock(const char *path, struct fuse_file_info *fi, int cmd,
-		    struct flock *lock)
-{
-	(void) path;
-
-	return ulockmgr_op(fi->fh, cmd, lock, &fi->lock_owner,
-			   sizeof(fi->lock_owner));
-}
-#endif
-
 void *
 studentfs_init(struct fuse_conn_info *conn)
 {
-#ifdef __APPLE__
-	FUSE_ENABLE_SETVOLNAME(conn);
-	FUSE_ENABLE_XTIMES(conn);
-#endif
 	return NULL;
 }
 
@@ -611,28 +511,12 @@ studentfs_destroy(void *userdata)
 {
 }
 
-#ifndef __APPLE__
-static int studentfs_flock(const char *path, struct fuse_file_info *fi, int op)
-{
-	int res;
-	(void) path;
-
-	res = flock(fi->fh, op);
-	if (res == -1)
-		return -errno;
-
-	return 0;
-}
-#endif
-
 static struct fuse_operations studentfs_oper = {
 	.init	   	= studentfs_init,
 	.destroy	= studentfs_destroy,
 	.getattr	= studentfs_getattr,
 	.fgetattr	= studentfs_fgetattr,
-#ifndef __APPLE__
 	.access		= studentfs_access,
-#endif
 	.readlink	= studentfs_readlink,
 	.opendir	= studentfs_opendir,
 	.readdir	= studentfs_readdir,
@@ -667,11 +551,6 @@ static struct fuse_operations studentfs_oper = {
 	.listxattr	= studentfs_listxattr,
 	.removexattr	= studentfs_removexattr,
 #endif
-#ifndef __APPLE__
-	.lock		= studentfs_lock,
-	.flock		= studentfs_flock,
-#endif
-
 	.flag_nullpath_ok = 1,
 #if HAVE_UTIMENSAT
 	.flag_utime_omit_ok = 1,
