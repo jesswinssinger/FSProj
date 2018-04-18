@@ -575,6 +575,11 @@ char *_get_next_vnum(const char *path, char *vnum) {
 char *get_next_vnum(const char *path) {
 	char *curr_vnum = malloc(MAX_VNUM_LEN);
 
+	// File does not exist, so don't bother looking in the sdir.
+	if (access(path, F_OK) == -1) {
+		return "1";
+	}
+	
 	int res = studentfs_getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
 	if (res < 0) {
 		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
