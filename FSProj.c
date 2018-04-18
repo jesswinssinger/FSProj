@@ -1,5 +1,5 @@
 /*
-  SFS: STUDENT FILE SYSTEM
+  studentfs: STUDENT FILE SYSTEM
   Authors: Jess Winssinger, Evan Chrisinger, Santi Weight
 
   Source: fuse-2.8.7.tar.gz examples directory
@@ -8,7 +8,7 @@
   	Copyright (C) 2011       Sebastian Pipping <sebastian@pipping.org>
 
 	fusexmp_fh.c can be distributed under the terms of the GNU GPL.
-  gcc -Wall sfs.c `pkg-config fuse --cflags --libs` -o sfs
+  gcc -Wall studentfs.c `pkg-config fuse --cflags --libs` -o studentfs
 */
 
 #define FUSE_USE_VERSION 26
@@ -78,12 +78,12 @@ typedef struct Sdir {
 
 typedef struct SuperSdir {
 	char* fname;    	//< Name of file
-	size_t s_count; 	//< # of snapshots
+	size_t scount; 	//< # of snapshots
 	char* curr_ver;		//< Current version
 	uint64_t curr_fh;	//< Current version file handle
 } SuperSdir;
 
-static int sfs_getattr(const char *path, struct stat *stbuf)
+static int studentfs_getattr(const char *path, struct stat *stbuf)
 {
 	int res;
 
@@ -94,7 +94,7 @@ static int sfs_getattr(const char *path, struct stat *stbuf)
 	return 0;
 }
 
-static int sfs_fgetattr(const char *path, struct stat *stbuf,
+static int studentfs_fgetattr(const char *path, struct stat *stbuf,
 			struct fuse_file_info *fi)
 {
 	int res;
@@ -108,7 +108,7 @@ static int sfs_fgetattr(const char *path, struct stat *stbuf,
 	return 0;
 }
 
-static int sfs_access(const char *path, int mask)
+static int studentfs_access(const char *path, int mask)
 {
 	int res;
 
@@ -119,7 +119,7 @@ static int sfs_access(const char *path, int mask)
 	return 0;
 }
 
-static int sfs_readlink(const char *path, char *buf, size_t size)
+static int studentfs_readlink(const char *path, char *buf, size_t size)
 {
 	int res;
 
@@ -131,16 +131,16 @@ static int sfs_readlink(const char *path, char *buf, size_t size)
 	return 0;
 }
 
-struct sfs_dirp {
+struct studentfs_dirp {
 	DIR *dp;
 	struct dirent *entry;
 	off_t offset;
 };
 
-static int sfs_opendir(const char *path, struct fuse_file_info *fi)
+static int studentfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	int res;
-	struct sfs_dirp *d = malloc(sizeof(struct sfs_dirp));
+	struct studentfs_dirp *d = malloc(sizeof(struct studentfs_dirp));
 	if (d == NULL)
 		return -ENOMEM;
 
@@ -157,15 +157,15 @@ static int sfs_opendir(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static inline struct sfs_dirp *get_dirp(struct fuse_file_info *fi)
+static inline struct studentfs_dirp *get_dirp(struct fuse_file_info *fi)
 {
-	return (struct sfs_dirp *) (uintptr_t) fi->fh;
+	return (struct studentfs_dirp *) (uintptr_t) fi->fh;
 }
 
-static int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+static int studentfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		       off_t offset, struct fuse_file_info *fi)
 {
-	struct sfs_dirp *d = get_dirp(fi);
+	struct studentfs_dirp *d = get_dirp(fi);
 
 	(void) path;
 	if (offset != d->offset) {
@@ -197,16 +197,16 @@ static int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	return 0;
 }
 
-static int sfs_releasedir(const char *path, struct fuse_file_info *fi)
+static int studentfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
-	struct sfs_dirp *d = get_dirp(fi);
+	struct studentfs_dirp *d = get_dirp(fi);
 	(void) path;
 	closedir(d->dp);
 	free(d);
 	return 0;
 }
 
-static int sfs_mknod(const char *path, mode_t mode, dev_t rdev)
+static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	int res;
 
@@ -220,7 +220,7 @@ static int sfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	return 0;
 }
 
-static int sfs_mkdir(const char *path, mode_t mode)
+static int studentfs_mkdir(const char *path, mode_t mode)
 {
 	int res;
 
@@ -231,7 +231,7 @@ static int sfs_mkdir(const char *path, mode_t mode)
 	return 0;
 }
 
-static int sfs_unlink(const char *path)
+static int studentfs_unlink(const char *path)
 {
 	int res;
 
@@ -242,7 +242,7 @@ static int sfs_unlink(const char *path)
 	return 0;
 }
 
-static int sfs_rmdir(const char *path)
+static int studentfs_rmdir(const char *path)
 {
 	int res;
 
@@ -253,7 +253,7 @@ static int sfs_rmdir(const char *path)
 	return 0;
 }
 
-static int sfs_symlink(const char *from, const char *to)
+static int studentfs_symlink(const char *from, const char *to)
 {
 	int res;
 
@@ -264,7 +264,7 @@ static int sfs_symlink(const char *from, const char *to)
 	return 0;
 }
 
-static int sfs_rename(const char *from, const char *to)
+static int studentfs_rename(const char *from, const char *to)
 {
 	int res;
 
@@ -275,7 +275,7 @@ static int sfs_rename(const char *from, const char *to)
 	return 0;
 }
 
-static int sfs_link(const char *from, const char *to)
+static int studentfs_link(const char *from, const char *to)
 {
 	int res;
 
@@ -286,7 +286,7 @@ static int sfs_link(const char *from, const char *to)
 	return 0;
 }
 
-static int sfs_chmod(const char *path, mode_t mode)
+static int studentfs_chmod(const char *path, mode_t mode)
 {
 	int res;
 
@@ -301,7 +301,7 @@ static int sfs_chmod(const char *path, mode_t mode)
 	return 0;
 }
 
-static int sfs_chown(const char *path, uid_t uid, gid_t gid)
+static int studentfs_chown(const char *path, uid_t uid, gid_t gid)
 {
 	int res;
 
@@ -312,7 +312,7 @@ static int sfs_chown(const char *path, uid_t uid, gid_t gid)
 	return 0;
 }
 
-static int sfs_truncate(const char *path, off_t size)
+static int studentfs_truncate(const char *path, off_t size)
 {
 	int res;
 
@@ -323,7 +323,7 @@ static int sfs_truncate(const char *path, off_t size)
 	return 0;
 }
 
-static int sfs_ftruncate(const char *path, off_t size,
+static int studentfs_ftruncate(const char *path, off_t size,
 			 struct fuse_file_info *fi)
 {
 	int res;
@@ -338,7 +338,7 @@ static int sfs_ftruncate(const char *path, off_t size,
 }
 
 #ifdef HAVE_UTIMENSAT
-static int sfs_utimens(const char *path, const struct timespec ts[2])
+static int studentfs_utimens(const char *path, const struct timespec ts[2])
 {
 	int res;
 
@@ -351,7 +351,7 @@ static int sfs_utimens(const char *path, const struct timespec ts[2])
 }
 #endif
 
-static int sfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
+static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
 	int fd;
 
@@ -363,7 +363,7 @@ static int sfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int sfs_open(const char *path, struct fuse_file_info *fi)
+static int studentfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int fd;
 
@@ -375,7 +375,7 @@ static int sfs_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int sfs_read(const char *path, char *buf, size_t size, off_t offset,
+static int studentfs_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
 {
 	int res;
@@ -388,7 +388,7 @@ static int sfs_read(const char *path, char *buf, size_t size, off_t offset,
 	return res;
 }
 
-static int sfs_read_buf(const char *path, struct fuse_bufvec **bufp,
+static int studentfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 			size_t size, off_t offset, struct fuse_file_info *fi)
 {
 	struct fuse_bufvec *src;
@@ -410,7 +410,7 @@ static int sfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 	return 0;
 }
 
-static int sfs_write(const char *path, const char *buf, size_t size,
+static int studentfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	int res;
@@ -423,7 +423,7 @@ static int sfs_write(const char *path, const char *buf, size_t size,
 	return res;
 }
 
-static int sfs_write_buf(const char *path, struct fuse_bufvec *buf,
+static int studentfs_write_buf(const char *path, struct fuse_bufvec *buf,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	struct fuse_bufvec dst = FUSE_BUFVEC_INIT(fuse_buf_size(buf));
@@ -437,7 +437,7 @@ static int sfs_write_buf(const char *path, struct fuse_bufvec *buf,
 	return fuse_buf_copy(&dst, buf, FUSE_BUF_SPLICE_NONBLOCK);
 }
 
-static int sfs_statfs(const char *path, struct statvfs *stbuf)
+static int studentfs_statfs(const char *path, struct statvfs *stbuf)
 {
 	int res;
 
@@ -448,7 +448,7 @@ static int sfs_statfs(const char *path, struct statvfs *stbuf)
 	return 0;
 }
 
-static int sfs_flush(const char *path, struct fuse_file_info *fi)
+static int studentfs_flush(const char *path, struct fuse_file_info *fi)
 {
 	int res;
 
@@ -465,7 +465,7 @@ static int sfs_flush(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int sfs_release(const char *path, struct fuse_file_info *fi)
+static int studentfs_release(const char *path, struct fuse_file_info *fi)
 {
 	(void) path;
 	close(fi->fh);
@@ -473,7 +473,7 @@ static int sfs_release(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int sfs_fsync(const char *path, int isdatasync,
+static int studentfs_fsync(const char *path, int isdatasync,
 		     struct fuse_file_info *fi)
 {
 	int res;
@@ -494,7 +494,7 @@ static int sfs_fsync(const char *path, int isdatasync,
 }
 
 #if defined(HAVE_POSIX_FALLOCATE) || defined(__APPLE__)
-static int sfs_fallocate(const char *path, int mode,
+static int studentfs_fallocate(const char *path, int mode,
 			off_t offset, off_t length, struct fuse_file_info *fi)
 {
 #ifdef __APPLE__
@@ -535,10 +535,10 @@ static int sfs_fallocate(const char *path, int mode,
 #ifdef HAVE_SETXATTR
 /* xattr operations are optional and can safely be left unimplemented */
 #ifdef __APPLE__
-static int sfs_setxattr(const char *path, const char *name, const char *value,
+static int studentfs_setxattr(const char *path, const char *name, const char *value,
 			size_t size, int flags, uint32_t position)
 #else
-static int sfs_setxattr(const char *path, const char *name, const char *value,
+static int studentfs_setxattr(const char *path, const char *name, const char *value,
 			size_t size, int flags)
 #endif
 {
@@ -564,10 +564,10 @@ static int sfs_setxattr(const char *path, const char *name, const char *value,
 }
 
 #ifdef __APPLE__
-static int sfs_getxattr(const char *path, const char *name, char *value,
+static int studentfs_getxattr(const char *path, const char *name, char *value,
 			size_t size, uint32_t position)
 #else
-static int sfs_getxattr(const char *path, const char *name, char *value,
+static int studentfs_getxattr(const char *path, const char *name, char *value,
 			size_t size)
 #endif
 {
@@ -589,7 +589,7 @@ static int sfs_getxattr(const char *path, const char *name, char *value,
 	return res;
 }
 
-static int sfs_listxattr(const char *path, char *list, size_t size)
+static int studentfs_listxattr(const char *path, char *list, size_t size)
 {
 #ifdef __APPLE__
 	ssize_t res = listxattr(path, list, size, XATTR_NOFOLLOW);
@@ -625,7 +625,7 @@ static int sfs_listxattr(const char *path, char *list, size_t size)
 	return res;
 }
 
-static int sfs_removexattr(const char *path, const char *name)
+static int studentfs_removexattr(const char *path, const char *name)
 {
 #ifdef __APPLE__
 	int res;
@@ -647,7 +647,7 @@ static int sfs_removexattr(const char *path, const char *name)
 #endif /* HAVE_SETXATTR */
 
 #ifndef __APPLE__
-static int sfs_lock(const char *path, struct fuse_file_info *fi, int cmd,
+static int studentfs_lock(const char *path, struct fuse_file_info *fi, int cmd,
 		    struct flock *lock)
 {
 	(void) path;
@@ -658,7 +658,7 @@ static int sfs_lock(const char *path, struct fuse_file_info *fi, int cmd,
 #endif
 
 void *
-sfs_init(struct fuse_conn_info *conn)
+studentfs_init(struct fuse_conn_info *conn)
 {
 #ifdef __APPLE__
 	FUSE_ENABLE_SETVOLNAME(conn);
@@ -668,12 +668,12 @@ sfs_init(struct fuse_conn_info *conn)
 }
 
 void
-sfs_destroy(void *userdata)
+studentfs_destroy(void *userdata)
 {
 }
 
 #ifndef __APPLE__
-static int sfs_flock(const char *path, struct fuse_file_info *fi, int op)
+static int studentfs_flock(const char *path, struct fuse_file_info *fi, int op)
 {
 	int res;
 	(void) path;
@@ -686,54 +686,54 @@ static int sfs_flock(const char *path, struct fuse_file_info *fi, int op)
 }
 #endif
 
-static struct fuse_operations sfs_oper = {
-	.init	   	= sfs_init,
-	.destroy	= sfs_destroy,
-	.getattr	= sfs_getattr,
-	.fgetattr	= sfs_fgetattr,
+static struct fuse_operations studentfs_oper = {
+	.init	   	= studentfs_init,
+	.destroy	= studentfs_destroy,
+	.getattr	= studentfs_getattr,
+	.fgetattr	= studentfs_fgetattr,
 #ifndef __APPLE__
-	.access		= sfs_access,
+	.access		= studentfs_access,
 #endif
-	.readlink	= sfs_readlink,
-	.opendir	= sfs_opendir,
-	.readdir	= sfs_readdir,
-	.releasedir	= sfs_releasedir,
-	.mknod		= sfs_mknod,
-	.mkdir		= sfs_mkdir,
-	.symlink	= sfs_symlink,
-	.unlink		= sfs_unlink,
-	.rmdir		= sfs_rmdir,
-	.rename		= sfs_rename,
-	.link		= sfs_link,
-	.chmod		= sfs_chmod,
-	.chown		= sfs_chown,
-	.truncate	= sfs_truncate,
-	.ftruncate	= sfs_ftruncate,
+	.readlink	= studentfs_readlink,
+	.opendir	= studentfs_opendir,
+	.readdir	= studentfs_readdir,
+	.releasedir	= studentfs_releasedir,
+	.mknod		= studentfs_mknod,
+	.mkdir		= studentfs_mkdir,
+	.symlink	= studentfs_symlink,
+	.unlink		= studentfs_unlink,
+	.rmdir		= studentfs_rmdir,
+	.rename		= studentfs_rename,
+	.link		= studentfs_link,
+	.chmod		= studentfs_chmod,
+	.chown		= studentfs_chown,
+	.truncate	= studentfs_truncate,
+	.ftruncate	= studentfs_ftruncate,
 #ifdef HAVE_UTIMENSAT
-	.utimens	= sfs_utimens,
+	.utimens	= studentfs_utimens,
 #endif
-	.create		= sfs_create,
-	.open		= sfs_open,
-	.read		= sfs_read,
-	.read_buf	= sfs_read_buf,
-	.write		= sfs_write,
-	.write_buf	= sfs_write_buf,
-	.statfs		= sfs_statfs,
-	.flush		= sfs_flush,
-	.release	= sfs_release,
-	.fsync		= sfs_fsync,
+	.create		= studentfs_create,
+	.open		= studentfs_open,
+	.read		= studentfs_read,
+	.read_buf	= studentfs_read_buf,
+	.write		= studentfs_write,
+	.write_buf	= studentfs_write_buf,
+	.statfs		= studentfs_statfs,
+	.flush		= studentfs_flush,
+	.release	= studentfs_release,
+	.fsync		= studentfs_fsync,
 #if defined(HAVE_POSIX_FALLOCATE) || defined(__APPLE__)
-	.fallocate	= sfs_fallocate,
+	.fallocate	= studentfs_fallocate,
 #endif
 #ifdef HAVE_SETXATTR
-	.setxattr	= sfs_setxattr,
-	.getxattr	= sfs_getxattr,
-	.listxattr	= sfs_listxattr,
-	.removexattr	= sfs_removexattr,
+	.setxattr	= studentfs_setxattr,
+	.getxattr	= studentfs_getxattr,
+	.listxattr	= studentfs_listxattr,
+	.removexattr	= studentfs_removexattr,
 #endif
 #ifndef __APPLE__
-	.lock		= sfs_lock,
-	.flock		= sfs_flock,
+	.lock		= studentfs_lock,
+	.flock		= studentfs_flock,
 #endif
 
 	.flag_nullpath_ok = 1,
@@ -745,5 +745,5 @@ static struct fuse_operations sfs_oper = {
 int main(int argc, char *argv[])
 {
 	umask(0);
-	return fuse_main(argc, argv, &sfs_oper, NULL);
+	return fuse_main(argc, argv, &studentfs_oper, NULL);
 }
