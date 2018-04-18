@@ -586,12 +586,14 @@ char *get_next_vnum(const char *path) {
 		return "1";
 	}
 
+	#ifdef HAVE_SETXATTR
 	int res = studentfs_getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
 	if (res < 0) {
 		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
 		exit(0);
 	}
-
+	#endif
+	
 	return _get_next_vnum(path, curr_vnum);
 }
 
