@@ -58,6 +58,161 @@ typedef struct SuperSdir {
 	uint64_t curr_fh;	//< Current version file handle
 } SuperSdir;
 
+struct studentfs_dirp {
+	DIR *dp;
+	struct dirent *entry;
+	off_t offset;
+};
+
+/* Helper methods */
+
+/* Helper methods */
+char *_get_next_vnum(const char *path, char *vnum) {
+	// Get the first part of the string, and the last number as a series of tokens
+	char *final_token  = malloc(MAX_VNUM_LEN);
+	char *tokens[MAX_VNUM_LEN];
+	char *vnum_branch = malloc(MAX_VNUM_LEN);
+
+	// Split the tokens by the delimiter .
+	int token_i = 0;
+	char *res = strtok(vnum, ".");
+	if (res != NULL) {
+		strcpy(tokens[token_i], res);
+		token_i++;
+	}
+
+	while ((res = strtok(NULL, ".")) != NULL) {
+		strcpy(tokens[token_i], res);
+		token_i++;
+	}
+	strcpy(final_token, tokens[token_i-1]);
+
+	// Build the part of the vnum "branch" before the final delimited number (ie a.b.c.d -> a.b.c.)
+	vnum_branch[0] = '\0';
+	for(int i = 0; i < token_i; i++) {
+		strcat(vnum_branch, tokens[i]);
+	}
+
+	// Make the sdir be a directory
+	chmod(path, (0755 | S_IFDIR));
+	int final_num = atoi(final_token);
+	char *final_path = malloc(MAX_VNUM_LEN);
+	char *final_num_str = malloc(MAX_VNUM_LEN);
+	sprintf(final_num_str, "%d", final_num+1);
+
+	// Increment the current version number by 1.
+	strcpy(final_path, path);
+	strcat(final_path, "/");
+	strcat(final_path, vnum_branch);
+	strcat(final_path, (const char *) final_num_str);
+
+	// If there is already a child of the current directory, make a new branch (see Wiki research if this is confusing)
+	if (access(final_path, F_OK) != -1) {
+		strcpy(final_path, path);
+		strcat(final_path, "/");
+		strcat(final_path, vnum_branch);
+		sprintf(final_num_str, "%d", final_num);
+		strcat(final_path, (const char *) final_num_str);
+		strcat(final_path, ".1");
+		while (access(final_path, F_OK) != -1) {
+			final_path[strlen(final_path)-1] = '0';
+			strcat(final_path, ".1");
+		}
+	}
+
+	free(final_token);
+	free(res);	
+	for (int i = 0; i < MAX_VNUM_LEN; i++) {
+		free(tokens[i]);
+	}
+	free(vnum_branch);
+
+	return final_path;
+}
+
+char *get_next_vnum(const char *path) {
+	char *curr_vnum = malloc(MAX_VNUM_LEN);
+
+	// File does not exist, so don't bother looking in the sdir.
+	if (access(path, F_OK) == -1) {
+		return "1";
+	}
+
+	#ifdef HAVE_SETXATTR
+	int res = studentfs_getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
+	if (res < 0) {
+		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
+		exit(0);
+	}
+	#endif
+	
+	return _get_next_vnum(path, curr_vnum);
+}
+
+/* 
+ * make the SDIR if it does not already exist.
+ * If it does exist, return -1.
+ * If there is a corresponding file, copy all the information into the snapshot "1"
+ * otherwise, just create the directory and a blank file titled "1". 
+ */
+int mk_sdir(const char *path) {
+	// SDIR is already created, called improperly
+	if (access(path, F_OK) == -1 && is_sdir_ftype(path)) {
+		return -1;
+	}
+	long fsize = 0;
+	char *buf = malloc(1024);
+	int res;
+	/* if there is a file, copy the contents into the buffer */
+	if (access(path, F_OK) != -1) {
+		FILE *f = fopen(path, "rb");
+		fseek(f, 0, SEEK_END);
+		fsize = ftell(f);
+		fseek(f, 0, SEEK_SET);
+
+		res = fread(buf, fsize, sizeof(char), f);
+		if (res < 0) {
+			printf("failed to read from file before creating sdir\n");
+			return res;
+		}
+		fclose(f);
+
+		/* delete the existing file now that the contents are in the buffer */
+		unlink(path);
+		res = mkdir(path, 0755 | S_IFDIR);
+		if (res < 0) {
+			printf("failed to make SDIR directory\n");
+			return res;
+		}
+		free(f);
+	}
+
+
+	/* open the first version of the file in the sdir*/
+	char *init_filepath = malloc(2*MAX_VNUM_LEN);
+	strcpy(init_filepath, path);
+	strcat(init_filepath, "/");
+	strcat(init_filepath, "1");
+
+	/* write the buffered info to the file if it exists (fsize = 0 initially)*/
+	FILE *f_new = fopen(init_filepath, "w");
+	fwrite(buf, fsize, sizeof(char), f_new);
+	fclose(f_new);
+	
+	free(buf);
+	free(f_new);
+	free(init_filepath);
+
+	res = chmod(path, 0755 | S_IFREG);
+	if (res < 0) {
+		return res;
+	}
+
+	return 0;
+}
+
+/* FUSE methods */
+
 static int studentfs_getattr(const char *path, struct stat *stbuf)
 {
 	int res;
@@ -105,12 +260,6 @@ static int studentfs_readlink(const char *path, char *buf, size_t size)
 	buf[res] = '\0';
 	return 0;
 }
-
-struct studentfs_dirp {
-	DIR *dp;
-	struct dirent *entry;
-	off_t offset;
-};
 
 static int studentfs_opendir(const char *path, struct fuse_file_info *fi)
 {
@@ -335,13 +484,35 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 
 static int studentfs_open(const char *path, struct fuse_file_info *fi)
 {
+	#ifdef HAVE_SETXATTR	
 	int fd;
+	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
+	char *sdir_str = malloc(sizeof(SDIR_XATTR));
+	int is_sdir = getxattr(path, SDIR_XATTR, sdir_str, sizeof(SDIR_XATTR));
+	
+	if (is_sdir_ftype(path) && create_flag && access(path, F_OK) == -1) {
+		mk_sdir(path);
+	} else if (!create_flag && is_sdir) {
+		chmod(path, 0755 | S_IFDIR);
+		char *vnum = malloc(MAX_VNUM_LEN);
+		getxattr(path, VNUM_XATTR, vnum, sizeof(MAX_VNUM_LEN));
+		char *new_path = malloc(2*MAX_VNUM_LEN);
+		strcpy(new_path, path);
+		strcat(new_path, "/");
+		strcat(new_path, vnum);
 
-	fd = open(path, fi->flags);
-	if (fd == -1)
-		return -errno;
-
+		fd = studentfs_open(new_path, fi);
+		
+		free(vnum);
+		free(new_path);
+	} else {
+		fd = open(path, fi->flags);
+		if (fd == -1)
+		return -errno;	
+	}
 	fi->fh = fd;
+	free(sdir_str);
+	#endif
 	return 0;
 }
 
@@ -512,89 +683,6 @@ studentfs_init(struct fuse_conn_info *conn)
 void
 studentfs_destroy(void *userdata)
 {
-}
-
-/* Helper methods */
-char *_get_next_vnum(const char *path, char *vnum) {
-	// Get the first part of the string, and the last number as a series of tokens
-	char *final_token  = malloc(MAX_VNUM_LEN);
-	char *tokens[MAX_VNUM_LEN];
-	char *vnum_branch = malloc(MAX_VNUM_LEN);
-
-	// Split the tokens by the delimiter .
-	int token_i = 0;
-	char *res = strtok(vnum, ".");
-	if (res != NULL) {
-		strcpy(tokens[token_i], res);
-		token_i++;
-	}
-
-	while ((res = strtok(NULL, ".")) != NULL) {
-		strcpy(tokens[token_i], res);
-		token_i++;
-	}
-	strcpy(final_token, tokens[token_i-1]);
-
-	// Build the part of the vnum "branch" before the final delimited number (ie a.b.c.d -> a.b.c.)
-	vnum_branch[0] = '\0';
-	for(int i = 0; i < token_i; i++) {
-		strcat(vnum_branch, tokens[i]);
-	}
-
-	// Make the sdir be a directory
-	chmod(path, (0755 | S_IFDIR));
-	int final_num = atoi(final_token);
-	char *final_path = malloc(MAX_VNUM_LEN);
-	char *final_num_str = malloc(MAX_VNUM_LEN);
-	sprintf(final_num_str, "%d", final_num+1);
-
-	// Increment the current version number by 1.
-	strcpy(final_path, path);
-	strcat(final_path, "/");
-	strcat(final_path, vnum_branch);
-	strcat(final_path, (const char *) final_num_str);
-
-	// If there is already a child of the current directory, make a new branch (see Wiki research if this is confusing)
-	if (access(final_path, F_OK) != -1) {
-		strcpy(final_path, path);
-		strcat(final_path, "/");
-		strcat(final_path, vnum_branch);
-		sprintf(final_num_str, "%d", final_num);
-		strcat(final_path, (const char *) final_num_str);
-		strcat(final_path, ".1");
-		while (access(final_path, F_OK) != -1) {
-			final_path[strlen(final_path)-1] = '0';
-			strcat(final_path, ".1");
-		}
-	}
-
-	free(final_token);
-	free(res);
-	for (int i = 0; i < MAX_VNUM_LEN; i++) {
-		free(tokens[i]);
-	}
-	free(vnum_branch);
-
-	return final_path;
-}
-
-char *get_next_vnum(const char *path) {
-	char *curr_vnum = malloc(MAX_VNUM_LEN);
-
-	// File does not exist, so don't bother looking in the sdir.
-	if (access(path, F_OK) == -1) {
-		return "1";
-	}
-
-	#ifdef HAVE_SETXATTR
-	int res = studentfs_getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
-	if (res < 0) {
-		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
-		exit(0);
-	}
-	#endif
-	
-	return _get_next_vnum(path, curr_vnum);
 }
 
 
