@@ -51,6 +51,18 @@ struct studentfs_dirp {
 };
 
 /* Helper methods */
+// TODO: Write this
+/* Version changes gets the number of changes bytewise made to a file
+ * at a file descriptor.
+ * 
+ * My thinking on implementation:
+ * Store the fd's and associated number of changes made to them in
+ * a data structure of file descriptors globally.
+ */
+int ver_changes(int fd) {
+	return 0;
+}
+
 char *_get_next_vnum(const char *path, char *vnum) {
 	// Get the first part of the string, and the last number as a series of tokens
 	char *final_token  = malloc(MAX_VNUM_LEN);
@@ -765,6 +777,5 @@ static struct fuse_operations studentfs_oper = {
 int main(int argc, char *argv[])
 {
 	umask(0);
-	initArray(vc_fds, 64);
 	return fuse_main(argc, argv, &studentfs_oper, NULL);
 }
