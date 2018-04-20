@@ -42,10 +42,15 @@
 /* Project header files */
 #include "consts.h"
 #include "macros.h"
-#include "arraylist.h"
+
+/* Important structs */
+struct studentfs_dirp {
+	DIR *dp;
+	struct dirent *entry;
+	off_t offset;
+};
 
 /* Helper methods */
-
 char *_get_next_vnum(const char *path, char *vnum) {
 	// Get the first part of the string, and the last number as a series of tokens
 	char *final_token  = malloc(MAX_VNUM_LEN);
@@ -149,7 +154,7 @@ int mk_sdir(const char *path) {
 		fsize = ftell(f);
 		fseek(f, 0, SEEK_SET);
 
-		buf = realloc(fsize);
+		buf = realloc(buf, fsize);
 		res = fread(buf, fsize, sizeof(char), f);
 		if (res < 0) {
 			printf("failed to read from file before creating sdir\n");
