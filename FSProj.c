@@ -41,32 +41,11 @@
 
 /* Project header files */
 #include "consts.h"
-
-typedef struct Sdir {
-	char* ver_num; 	  //< Version number
-	uint64_t sfh; 	  //< File handle of snapfile
-	mode_t smode;	  //< Mode for snapfile
-	size_t ssize;	  //< Size of snapfile
-	size_t size;	  //< ssize + size of subtree
-	size_t entry_cnt; //< # of entries
-} Sdir;
-
-typedef struct SuperSdir {
-	char* fname;    	//< Name of file
-	size_t scount;		//< # of snapshots
-	char* curr_ver;		//< Current version
-	uint64_t curr_fh;	//< Current version file handle
-} SuperSdir;
-
-struct studentfs_dirp {
-	DIR *dp;
-	struct dirent *entry;
-	off_t offset;
-};
+#include "macros.h"
+#include "arraylist.h"
 
 /* Helper methods */
 
-/* Helper methods */
 char *_get_next_vnum(const char *path, char *vnum) {
 	// Get the first part of the string, and the last number as a series of tokens
 	char *final_token  = malloc(MAX_VNUM_LEN);
@@ -161,7 +140,7 @@ int mk_sdir(const char *path) {
 		return -1;
 	}
 	long fsize = 0;
-	char *buf = malloc(1024);
+	char *buf = malloc(1);
 	int res;
 	/* if there is a file, copy the contents into the buffer */
 	if (access(path, F_OK) != -1) {
@@ -170,6 +149,7 @@ int mk_sdir(const char *path) {
 		fsize = ftell(f);
 		fseek(f, 0, SEEK_SET);
 
+		buf = realloc(fsize);
 		res = fread(buf, fsize, sizeof(char), f);
 		if (res < 0) {
 			printf("failed to read from file before creating sdir\n");
@@ -264,6 +244,19 @@ static int studentfs_readlink(const char *path, char *buf, size_t size)
 static int studentfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	int res;
+	/*char *val = malloc(4096);
+	if (getxattr(path, SDIR_XATTR, val, 0) >= 0) {
+		struct stat stat_res;
+		if ((int res = stat(path, &stat_res)) < 0) {
+			printf("Could not get stat of SDIR\n");
+			return res;
+		}
+		int is_file = (stat_res->st_mode & S_IFDIR) == 0;
+		if (is_file) {
+			chmod(path, 0755 | S_IFDIR);
+		}
+	}
+	free(val);*/
 	struct studentfs_dirp *d = malloc(sizeof(struct studentfs_dirp));
 	if (d == NULL)
 		return -ENOMEM;
@@ -500,6 +493,7 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 		strcpy(new_path, path);
 		strcat(new_path, "/");
 		strcat(new_path, vnum);
+		chmod(path, 0755 | S_IFREG);
 
 		fd = studentfs_open(new_path, fi);
 		
@@ -555,7 +549,38 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	int res;
+	char *val = malloc(sizeof(SDIR_XATTR));
+	if (getxattr(path, SDIR_XATTR, val, 0) >= 0) {
+		char *curr_ver = malloc(MAX_VNUM_LEN);
+		int sz = getxattr(path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
+		if (sz < 0) {
+			return sz;
+		}
 
+		/*
+		 * TODO:
+		 * Make number of changes before creating a new version file specific (xattr)
+		 * Use diff to compute the differences instead of using the size of the write
+		 */
+		if (ver_changes(fi->fh) && (ver_changes(fi->fh) + size > 2*MAX_NO_CHANGES)) {
+			/* 
+			 * Write two files if there were previous changes and the new changes on top
+			 * of the old changes will go over the size of the maximum number of changes. 
+			 */
+			
+		} else if (ver_changes(fi->fh) + size > MAX_NO_CHANGES) {
+			/*
+			 * Write one file if the new changes put the maximum number of changes over the
+			 * limit of changes allotted for the file.
+			 */
+		} else {
+			/*
+			 * Write to the old version of the file if there are not enough changes to trigger
+			 * the creation of a new file.
+			 */
+		}
+
+	}
 	(void) path;
 	res = pwrite(fi->fh, buf, size, offset);
 	if (res == -1)
@@ -735,5 +760,6 @@ static struct fuse_operations studentfs_oper = {
 int main(int argc, char *argv[])
 {
 	umask(0);
+	initArray(vc_fds, 64);
 	return fuse_main(argc, argv, &studentfs_oper, NULL);
 }
