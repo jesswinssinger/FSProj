@@ -533,24 +533,34 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 	int res;
 	char* vnum = malloc(MAX_VNUM_LEN);
 	char*new_path = malloc(2*MAX_VNUM_LEN);
+	char temp[sizeof(SDIR_XATTR)];
 
-	(void) path;
-	res = pread(fi->fh, buf, size, offset);
-	res = chmod(path, 755 | S_IFDIR);
-	if (res == -1)
-		res = -errno;
-		return -errno;
-	res = getxattr(path, VNUM_XATTR, vnum, MAX_VNUM_LEN);
-	if(res == -1)
-		return -errno;
+	int is_sdir = getxattr(path, SDIR_XATTR, temp, size(SDIR_XATTR));
+	if (is_sdir != -1) {
+		res = chmod(path, 755 | S_IFDIR);
+		if (res == -1)
+			return -errno;
+		res = getxattr(path, VNUM_XATTR, vnum, MAX_VNUM_LEN);
+		if(res == -1)
+			return -errno;
 
-	strcpy(new_path, path);
-	strcat(new_path, "/");
-	strcat(new_path, vnum);
+		strcpy(new_path, path);
+		strcat(new_path, "/");
+		strcat(new_path, vnum);
 
-	res = read(new_path, buf, size, offset, fi);
+		res = read(new_path, buf, size, offset, fi);
+		if (res == -1)
+			return -errno;
 
-	return res;
+		res = chmod(path, 755 | S_IFREG);
+
+		return res;
+	}
+	else{
+		res = read(path, buf, size, offset, fi);
+		return read;
+	}
+
 }
 
 static int studentfs_read_buf(const char *path, struct fuse_bufvec **bufp,
