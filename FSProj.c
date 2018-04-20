@@ -346,11 +346,21 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 		    struct fuse_file_info *fi)
 {
 	int res;
+	char* vnum = malloc(MAX_VNUM_LEN);
+	char*new_path = malloc(2*MAX_VNUM_LEN);
 
-	(void) path;
-	res = pread(fi->fh, buf, size, offset);
+	res = chmod(path, 755 | S_IFDIR);
 	if (res == -1)
-		res = -errno;
+		return -errno;
+	res = getxattr(path, VNUM_XATTR, vnum, MAX_VNUM_LEN);
+	if(res == -1)
+		return -errno;
+
+	strcpy(new_path, path);
+	strcat(new_path, "/");
+	strcat(new_path, vnum);
+
+	res = read(new_path, buf, size, offset, fi);
 
 	return res;
 }
