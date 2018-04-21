@@ -486,7 +486,7 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 
 	fd = open(path, fi->flags, mode);
 	if (fd == -1)
-		return -errno;
+		return fd;
 
 	fi->fh = fd;
 	return 0;
@@ -534,7 +534,7 @@ static int read_offset(char *path, char *buf, size_t size, off_t offset){
 	res = lseek(fd, offset, SEEK_SET);
 	if (res == -1)
 		return res;
-		
+
 	res = read(fd, buf, size);
 	return res;
 }
@@ -543,18 +543,18 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 		    struct fuse_file_info *fi)
 {
 	int res;
-	char* vnum = malloc(MAX_VNUM_LEN);
-	char* new_path = malloc(2*MAX_VNUM_LEN);
-	char temp[sizeof(SDIR_XATTR)];
+	char *vnum = malloc(MAX_VNUM_LEN);
+	char *new_path = malloc(2*MAX_VNUM_LEN);
+	char *temp = malloc(sizeof(SDIR_XATTR));
 
 	int is_sdir = getxattr(path, SDIR_XATTR, temp, size(SDIR_XATTR));
 	if (is_sdir != -1) {
 		res = chmod(path, 755 | S_IFDIR);
 		if (res == -1)
-			return -errno;
+			goto exit_error;
 		res = getxattr(path, CURR_VNUM, vnum, MAX_VNUM_LEN);
-		if(res == -1)
-			return -errno;
+		if (res == -1)
+			goto exit_error;
 
 		strcpy(new_path, path);
 		strcat(new_path, "/");
@@ -563,19 +563,20 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 
 		res = read_offset(new_path, buf, size, offset);
 		if (res == -1)
-			return -errno;
+			goto exit_error;
 
 		res = chmod(path, 755 | S_IFREG);
 
-		return res;
+		goto exit_error;
 	}
 	else{
 		res = read_offset(path, buf, size, offset);
-		return res;
+		goto exit_error;
 	}
+	exit_error:
 	free(vnum);
 	free(new_path);
-
+	return res;
 }
 
 static int studentfs_read_buf(const char *path, struct fuse_bufvec **bufp,
@@ -610,7 +611,6 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 		char *curr_ver = malloc(MAX_VNUM_LEN);
 		char *next_ver = malloc(MAX_VNUM_LEN);
 		char *new_path = malloc(2*MAX_VNUM_LEN);
-
 
 		int res = getxattr(path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
 		if (res == -1) {
