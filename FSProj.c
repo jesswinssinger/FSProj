@@ -54,21 +54,13 @@ struct studentfs_dirp {
 // TODO: Write this
 /* Version changes gets the number of changes bytewise made to a file
  * at a file descriptor.
-<<<<<<< HEAD
  *
-=======
- * 
->>>>>>> ec/dev
  * My thinking on implementation:
  * Store the fd's and associated number of changes made to them in
  * a data structure of file descriptors globally.
  */
 int ver_changes(int fd) {
-<<<<<<< HEAD
 
-=======
-	return 0;
->>>>>>> ec/dev
 }
 
 char *_get_next_vnum(const char *path, char *vnum) {
@@ -125,11 +117,7 @@ char *_get_next_vnum(const char *path, char *vnum) {
 	}
 
 	free(final_token);
-<<<<<<< HEAD
 	free(res);
-=======
-	free(res);	
->>>>>>> ec/dev
 	for (int i = 0; i < MAX_VNUM_LEN; i++) {
 		free(tokens[i]);
 	}
@@ -153,7 +141,6 @@ char *get_next_vnum(const char *path) {
 		exit(0);
 	}
 	#endif
-<<<<<<< HEAD
 
 	return _get_next_vnum(path, curr_vnum);
 }
@@ -163,17 +150,6 @@ char *get_next_vnum(const char *path) {
  * If it does exist, return -1.
  * If there is a corresponding file, copy all the information into the snapshot "1"
  * otherwise, just create the directory and a blank file titled "1".
-=======
-	
-	return _get_next_vnum(path, curr_vnum);
-}
-
-/* 
- * make the SDIR if it does not already exist.
- * If it does exist, return -1.
- * If there is a corresponding file, copy all the information into the snapshot "1"
- * otherwise, just create the directory and a blank file titled "1". 
->>>>>>> ec/dev
  */
 int mk_sdir(const char *path) {
 	// SDIR is already created, called improperly
@@ -214,7 +190,6 @@ int mk_sdir(const char *path) {
 	strcpy(init_filepath, path);
 	strcat(init_filepath, "/");
 	strcat(init_filepath, "1");
-<<<<<<< HEAD
 
 	/* write the buffered info to the file if it exists (fsize = 0 initially)*/
 	FILE *f_new = fopen(init_filepath, "w");
@@ -233,26 +208,6 @@ int mk_sdir(const char *path) {
 	return 0;
 }
 
-=======
-
-	/* write the buffered info to the file if it exists (fsize = 0 initially)*/
-	FILE *f_new = fopen(init_filepath, "w");
-	fwrite(buf, fsize, sizeof(char), f_new);
-	fclose(f_new);
-	
-	free(buf);
-	free(f_new);
-	free(init_filepath);
-
-	res = chmod(path, 0755 | S_IFREG);
-	if (res < 0) {
-		return res;
-	}
-
-	return 0;
-}
-
->>>>>>> ec/dev
 /* FUSE methods */
 
 static int studentfs_getattr(const char *path, struct stat *stbuf)
@@ -539,20 +494,12 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 
 static int studentfs_open(const char *path, struct fuse_file_info *fi)
 {
-<<<<<<< HEAD
 	#ifdef HAVE_SETXATTR
-=======
-	#ifdef HAVE_SETXATTR	
->>>>>>> ec/dev
 	int fd;
 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
 	char *sdir_str = malloc(sizeof(SDIR_XATTR));
 	int is_sdir = getxattr(path, SDIR_XATTR, sdir_str, sizeof(SDIR_XATTR));
-<<<<<<< HEAD
 
-=======
-	
->>>>>>> ec/dev
 	if (is_sdir_ftype(path) && create_flag && access(path, F_OK) == -1) {
 		mk_sdir(path);
 	} else if (!create_flag && is_sdir) {
@@ -566,21 +513,13 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 		chmod(path, 0755 | S_IFREG);
 
 		fd = studentfs_open(new_path, fi);
-<<<<<<< HEAD
 
-=======
-		
->>>>>>> ec/dev
 		free(vnum);
 		free(new_path);
 	} else {
 		fd = open(path, fi->flags);
 		if (fd == -1)
-<<<<<<< HEAD
 		return -errno;
-=======
-		return -errno;	
->>>>>>> ec/dev
 	}
 	fi->fh = fd;
 	free(sdir_str);
@@ -664,19 +603,11 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 		 * Use diff to compute the differences instead of using the size of the write
 		 */
 		if (ver_changes(fi->fh) && (ver_changes(fi->fh) + size > 2*MAX_NO_CHANGES)) {
-<<<<<<< HEAD
 			/*
 			 * Write two files if there were previous changes and the new changes on top
 			 * of the old changes will go over the size of the maximum number of changes.
 			 */
 
-=======
-			/* 
-			 * Write two files if there were previous changes and the new changes on top
-			 * of the old changes will go over the size of the maximum number of changes. 
-			 */
-			
->>>>>>> ec/dev
 		} else if (ver_changes(fi->fh) + size > MAX_NO_CHANGES) {
 			/*
 			 * Write one file if the new changes put the maximum number of changes over the
