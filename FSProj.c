@@ -592,10 +592,15 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 	char *val = malloc(sizeof(SDIR_XATTR));
 	if (getxattr(path, SDIR_XATTR, val, 0) >= 0) {
 		char *curr_ver = malloc(MAX_VNUM_LEN);
-		int sz = getxattr(path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
-		if (sz < 0) {
-			return sz;
+		char *new_path = malloc(2*MAX_VNUM_LEN);
+		int res = getxattr(path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
+		if (res == -1) {
+			return res;
 		}
+		strcpy(new_path, path);
+		strcat(new_path, "/");
+		strcat(new_path, curr_ver);
+		chmod(path, 755 | S_IFDIR);
 
 		/*
 		 * TODO:
@@ -614,10 +619,14 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 			 * limit of changes allotted for the file.
 			 */
 		} else {
-			/*
-			 * Write to the old version of the file if there are not enough changes to trigger
-			 * the creation of a new file.
-			 */
+
+			res = pwrite(new_path, buf, size, offset);
+			int check = chmod(path, 755 | S_IFREG);
+			if (check == -1)
+				return check;
+			return res;
+
+
 		}
 
 	}
