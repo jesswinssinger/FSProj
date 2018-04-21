@@ -558,7 +558,7 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 	}
 	else{
 		res = read(path, buf, size, offset, fi);
-		return read;
+		return res;
 	}
 
 }
