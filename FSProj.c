@@ -60,7 +60,7 @@ struct studentfs_dirp {
  * a data structure of file descriptors globally.
  */
 int ver_changes(int fd) {
-	return 0;
+
 }
 
 char *_get_next_vnum(const char *path, char *vnum) {
