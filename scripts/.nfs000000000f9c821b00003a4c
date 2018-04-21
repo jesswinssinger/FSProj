@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# snap [old::string] [new::string] [msg::string]
+# Write optional description for old file.
+
+if [-e $2]; then
+    echo "File $2 already exists!"
+else
+    mkdir "$1;$2;$3.VER"
+fi
+
+# if there is a msg, add msg to old's xattr
+
+# create new file named new
+    #call open
+
+# copy old's contents into new
+# print to console
+echo "Created new copy named $2."
