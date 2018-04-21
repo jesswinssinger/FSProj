@@ -35,9 +35,7 @@
 #include <sys/time.h>
 #include <sys/param.h>
 #include <string.h>
-#ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
-#endif
 
 /* Project header files */
 #include "consts.h"
@@ -54,7 +52,7 @@ struct studentfs_dirp {
 // TODO: Write this
 /* Version changes gets the number of changes bytewise made to a file
  * at a file descriptor.
- * 
+ *
  * My thinking on implementation:
  * Store the fd's and associated number of changes made to them in
  * a data structure of file descriptors globally.
@@ -117,7 +115,7 @@ char *_get_next_vnum(const char *path, char *vnum) {
 	}
 
 	free(final_token);
-	free(res);	
+	free(res);
 	for (int i = 0; i < MAX_VNUM_LEN; i++) {
 		free(tokens[i]);
 	}
@@ -134,22 +132,20 @@ char *get_next_vnum(const char *path) {
 		return "1";
 	}
 
-	#ifdef HAVE_SETXATTR
 	int res = studentfs_getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
 	if (res < 0) {
 		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
 		exit(0);
 	}
-	#endif
-	
+
 	return _get_next_vnum(path, curr_vnum);
 }
 
-/* 
+/*
  * make the SDIR if it does not already exist.
  * If it does exist, return -1.
  * If there is a corresponding file, copy all the information into the snapshot "1"
- * otherwise, just create the directory and a blank file titled "1". 
+ * otherwise, just create the directory and a blank file titled "1".
  */
 int mk_sdir(const char *path) {
 	// SDIR is already created, called improperly
@@ -195,7 +191,7 @@ int mk_sdir(const char *path) {
 	FILE *f_new = fopen(init_filepath, "w");
 	fwrite(buf, fsize, sizeof(char), f_new);
 	fclose(f_new);
-	
+
 	free(buf);
 	free(f_new);
 	free(init_filepath);
@@ -494,12 +490,11 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 
 static int studentfs_open(const char *path, struct fuse_file_info *fi)
 {
-	#ifdef HAVE_SETXATTR	
 	int fd;
 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
 	char *sdir_str = malloc(sizeof(SDIR_XATTR));
 	int is_sdir = getxattr(path, SDIR_XATTR, sdir_str, sizeof(SDIR_XATTR));
-	
+
 	if (is_sdir_ftype(path) && create_flag && access(path, F_OK) == -1) {
 		mk_sdir(path);
 	} else if (!create_flag && is_sdir) {
@@ -513,17 +508,16 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 		chmod(path, 0755 | S_IFREG);
 
 		fd = studentfs_open(new_path, fi);
-		
+
 		free(vnum);
 		free(new_path);
 	} else {
 		fd = open(path, fi->flags);
 		if (fd == -1)
-		return -errno;	
+		return -errno;
 	}
 	fi->fh = fd;
 	free(sdir_str);
-	#endif
 	return 0;
 }
 
@@ -580,11 +574,11 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 		 * Use diff to compute the differences instead of using the size of the write
 		 */
 		if (ver_changes(fi->fh) && (ver_changes(fi->fh) + size > 2*MAX_NO_CHANGES)) {
-			/* 
+			/*
 			 * Write two files if there were previous changes and the new changes on top
-			 * of the old changes will go over the size of the maximum number of changes. 
+			 * of the old changes will go over the size of the maximum number of changes.
 			 */
-			
+
 		} else if (ver_changes(fi->fh) + size > MAX_NO_CHANGES) {
 			/*
 			 * Write one file if the new changes put the maximum number of changes over the
@@ -676,7 +670,6 @@ static int studentfs_fsync(const char *path, int isdatasync,
 	return 0;
 }
 
-#ifdef HAVE_SETXATTR
 /* xattr operations are optional and can safely be left unimplemented */
 static int studentfs_setxattr(const char *path, const char *name, const char *value,
 			size_t size, int flags)
@@ -714,7 +707,6 @@ static int studentfs_removexattr(const char *path, const char *name)
 		return -errno;
 	return 0;
 }
-#endif /* HAVE_SETXATTR */
 
 void *
 studentfs_init(struct fuse_conn_info *conn)
@@ -762,12 +754,10 @@ static struct fuse_operations studentfs_oper = {
 	.flush		= studentfs_flush,
 	.release	= studentfs_release,
 	.fsync		= studentfs_fsync,
-#ifdef HAVE_SETXATTR
 	.setxattr	= studentfs_setxattr,
 	.getxattr	= studentfs_getxattr,
 	.listxattr	= studentfs_listxattr,
 	.removexattr	= studentfs_removexattr,
-#endif
 	.flag_nullpath_ok = 1,
 #if HAVE_UTIMENSAT
 	.flag_utime_omit_ok = 1,
