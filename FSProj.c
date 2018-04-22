@@ -26,6 +26,7 @@
 #include <fuse.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <libgen.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -152,7 +153,7 @@ char *get_next_vnum(const char *path) {
 		return "1";
 	}
 
-	int res = studentfs_getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
+	int res = getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
 	if (res < 0) {
 		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
 		exit(0);
@@ -370,9 +371,58 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	return 0;
 }
 
+static int snap(const char *path)
+{
+	int res;
+	/* Get base filename and sdir path. */
+	char* base = malloc(MAX_VNUM_LEN);
+	char* sdir_path = malloc(PATH_MAX);
+	strcpy(base, path);
+	strcpy(sdir_path, path);
+	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .VER
+	sdir_path = dirname(sdir_path);
+
+	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
+	// Parse new filename and optional msg from base
+	char* new_fname = strtok(base, ';');
+	char* msg = strtok(NULL, ';');
+	*/
+
+	/* If there is a message, add it to current version. */
+	if (base != NULL) {
+		char* curr_ver;
+		res = getxattr(sdir_path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
+		if (res < 0)
+			return res;
+
+		// Get path to current version
+		char* curr_ver_path;
+		strcpy(curr_ver_path, sdir_path);
+		curr_ver_path = strcat(curr_ver_path, "/");
+		curr_ver_path = strcat(curr_ver_path, curr_ver);
+
+		setxattr(curr_ver_path, "msg", base, MAX_VMSG_LEN, 0);
+		// TODO: SHOULD FILENAME BE VNUM? ALL FILES CONTAIN IT IN XATTR.
+		// SWITCH THIS TO EITHER CHECKING CURR_VER (WHICH SHOULD BE A NAME)
+		// OR LOOKING FOR HIDDEN FILES. (see snap.sh)
+	}
+
+	/* Create a new version with the contents of the current version. 
+	   (CURR_VER should be updated in get_next_vnum method) */
+	char* new_ver_path = get_next_vnum(sdir_path);
+
+	//TODO: CALL CP COMMAND IN UNIX
+	return 0;
+}
+
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
 	int res;
+
+	//TODO: Do we need to check if it has an sdir already?
+	if (is_snap(path)) {
+		snap(path);
+	}
 
 	res = mkdir(path, mode);
 	if (res == -1)
@@ -518,9 +568,15 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 	if (is_sdir_ftype(path) && create_flag && access(path, F_OK) == -1) {
 		mk_sdir(path);
 	} else if (!create_flag && is_sdir) {
+		/* TODO: Should we store "vnum" (which is really checkpoint num) in xattrs 
+		 * and keep checkpoints hidden with certain commands to navigate them,
+		 * so easier for user to just navigate versions or "snaps" by filename?
+		 * Think branches are the versions and commits are the checkpoints that are
+		 * automatically created based on certain parameters.
+		 */
 		chmod(path, DIR_PERMS);
 		char *vnum = malloc(MAX_VNUM_LEN);
-		getxattr(path, VNUM_XATTR, vnum, sizeof(MAX_VNUM_LEN));
+		getxattr(path, CURR_VNUM, vnum, sizeof(MAX_VNUM_LEN));
 		char *new_path = malloc(2*MAX_VNUM_LEN);
 		strcpy(new_path, path);
 		strcat(new_path, "/");
@@ -576,9 +632,10 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 		FILE *curr_ver = fopen(new_path, "r");
 		fseek(curr_ver, offset, SEEK_SET);
 		res = fread(buf, sizeof(char), size, curr_ver);
-		if (res == -1)
+		if (res == -1) {
 			printf("Failed to read in read\n");	
 			return -errno;
+		}
 
 		/* Make the directory appear as a file again */
 		perm_res = chmod(path, REG_PERMS);
