@@ -5,4 +5,5 @@ CFLAGS  =	-g -Og $(PKGFLAGS)
 PKGFLAGS        =	`pkg-config fuse --cflags --libs`
 
 studentfs.o : FSProj.c
-	gcc -Wall -g -Og $(PKGFLAGS) FSProj.c -o studentfs
+	gcc -Wall -o studentfs FSProj.c -g -Og $(PKGFLAGS)
+
