@@ -170,12 +170,8 @@ char *get_next_vnum(const char *path) {
  * otherwise, just create the directory and a blank file titled "1". 
  */
 int mk_sdir(const char *path) {
-	// SDIR is already created, called improperly
-	if (access(path, F_OK) == -1 && is_sdir_ftype(path)) {
-		return -1;
-	}
 	long fsize = 0;
-	char *buf = malloc(1);
+	char *buf = malloc(1024);
 	int res;
 	/* if there is a file, copy the contents into the buffer */
 	if (access(path, F_OK) != -1) {
@@ -183,8 +179,7 @@ int mk_sdir(const char *path) {
 		fseek(f, 0, SEEK_END);
 		fsize = ftell(f);
 		fseek(f, 0, SEEK_SET);
-
-		buf = realloc(buf, fsize);
+		buf = realloc(buf, fsize+1);
 		res = fread(buf, fsize, sizeof(char), f);
 		if (res < 0) {
 			printf("failed to read from file before creating sdir\n");
@@ -193,36 +188,43 @@ int mk_sdir(const char *path) {
 		fclose(f);
 
 		/* delete the existing file now that the contents are in the buffer */
-		unlink(path);
-		res = mkdir(path, DIR_PERMS);
-		if (res < 0) {
-			printf("failed to make SDIR directory\n");
-			return res;
-		}
-		free(f);
+		int remove_res = remove(path);
+		printf("remove res is %d\n", remove_res);
+		int unlink_res = unlink(path);
+		printf("unlink res is %d\n", unlink_res);
 	}
 
+	printf("mk_sdir 1\n");
+
+	/* Make the SDIR */
+	res = mkdir(path, DIR_PERMS | O_CREAT | O_TRUNC);
+	if (res < 0) {
+		printf("failed to make SDIR directory\n");
+		return res;
+	}
 
 	/* open the first version of the file in the sdir*/
 	char *init_filepath = malloc(2*MAX_VNUM_LEN);
 	strcpy(init_filepath, path);
 	strcat(init_filepath, "/");
 	strcat(init_filepath, "1");
-
+	printf("mk_sdir 2\n");
+	
 	/* write the buffered info to the file if it exists (fsize = 0 initially)*/
 	FILE *f_new = fopen(init_filepath, "w");
 	fwrite(buf, fsize, sizeof(char), f_new);
 	fclose(f_new);
 	
 	free(buf);
-	free(f_new);
 	free(init_filepath);
-
+	printf("mk_sdir 3\n");
+	
 	res = chmod(path, REG_PERMS);
 	if (res < 0) {
 		return res;
 	}
-
+	printf("mk_sdir 4\n");
+	
 	return 0;
 }
 
@@ -554,7 +556,6 @@ static int studentfs_ftruncate(const char *path, off_t size,
 	return 0;
 }
 
-#ifdef HAVE_UTIMENSAT
 static int studentfs_utimens(const char *path, const struct timespec ts[2])
 {
 	int res;
@@ -566,69 +567,101 @@ static int studentfs_utimens(const char *path, const struct timespec ts[2])
 
 	return 0;
 }
-#endif
+
+static int studentfs_open(const char *path, struct fuse_file_info *fi)
+{
+	int n = 0;
+	printf("open %d\n", n++);
+
+	int fd = -1;
+	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
+	char *sdir_str = malloc(strlen(SDIR_XATTR)+1);
+	int is_sdir = getxattr(path, SDIR_XATTR, sdir_str, strlen(SDIR_XATTR));
+	free(sdir_str);
+	/* Final path used to get the file descriptor for the file */
+	printf("open %d\n", n++);
+	if (is_sdir >= 0 && create_flag) {
+		printf("Tried to create an sdir when one was already created\n");
+		return -1;
+	}
+	printf("open %d\n", n++);
+	
+	if (is_sdir_ftype(path) && create_flag) {
+		printf("inside first open\n");
+		
+		/* Path ends with .SDIR here */
+		/* Create an sdir with no corresponding file */
+		char *sdir_path = malloc(strlen(path));
+		strcpy(sdir_path, path);
+		sdir_path[strlen(path)-strlen(SDIR_FILETYPE)] = '\0';
+
+		printf("Creating an SDIR\n");
+		mk_sdir((const char *) sdir_path);
+
+		chmod(sdir_path, DIR_PERMS);
+		char *sdir_file_path = malloc(strlen(path)+100);
+		strcpy(sdir_file_path, sdir_path);
+		strcat(sdir_file_path, "/1");
+		printf("before flags\n");
+		printf("flags: %d\n", fi->flags);
+		fd = open(sdir_file_path, (fi->flags) | O_CREAT, REG_PERMS);
+		chmod(sdir_path, REG_PERMS);
+		printf("created an sdir \n");
+		free(sdir_file_path);
+		free(sdir_path);
+	} else if (!create_flag && is_sdir >= 0) {
+		printf("inside second open\n");
+		/* Path does not end with .SDIR in this case */
+
+		/* Open an fd to an sdir's contained file */
+		/* TODO: Should we store "vnum" (which is really checkpoint num) in xattrs 
+		 * and keep checkpoints hidden with certain commands to navigate them,
+		 * so easier for user to just navigate versions or "snaps" by filename?
+		 * Think branches are the versions and commits are the checkpoints that are
+		 * automatically created based on certain parameters.
+		 */
+		chmod(path, DIR_PERMS);
+		char *vnum = malloc(MAX_VNUM_LEN);
+		getxattr(path, CURR_VNUM, vnum, sizeof(MAX_VNUM_LEN));
+		char *new_path = malloc(2*MAX_VNUM_LEN);
+		strcpy(new_path, path);
+		strcat(new_path, "/");
+		strcat(new_path, vnum);
+		printf("new_path %s\n", new_path);
+		
+		fd = open(new_path, fi->flags);
+		chmod(path, REG_PERMS);
+	
+		free(vnum);
+		free(new_path);
+	} else {
+		printf("inside 3rd\n");
+		fd = open(path, fi->flags);
+		if (fd == -1)
+		return -errno;	
+	}
+	printf("open %d", n++);
+	printf("fd is %d\n", fd);
+	fi->fh = fd;
+	return 0;
+}
 
 static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
 	int fd;
-
-	fd = open(path, fi->flags, mode);
+	printf("before open in create\n");
+	if (is_sdir_ftype(path)) {
+		studentfs_open(path, fi);
+		fd = fi->fh;
+	} else {
+		fd = open(path, fi->flags, mode);
+	}
 	if (fd == -1)
 		return -errno;
 
 	fi->fh = fd;
 	return 0;
 }
-
-static int studentfs_open(const char *path, struct fuse_file_info *fi)
-{
-	int fd;
-
-	fd = open(path, fi->flags);
-	if (fd == -1)
-		return -errno;
-
-	fi->fh = fd;
-	return 0;
-}
-// static int studentfs_open(const char *path, struct fuse_file_info *fi)
-// {
-// 	int fd;
-// 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
-// 	char *sdir_str = malloc(sizeof(SDIR_XATTR));
-// 	int is_sdir = getxattr(path, SDIR_XATTR, sdir_str, sizeof(SDIR_XATTR));
-	
-// 	if (is_sdir_ftype(path) && create_flag && access(path, F_OK) == -1) {
-// 		mk_sdir(path);
-// 	} else if (!create_flag && is_sdir) {
-// 		/* TODO: Should we store "vnum" (which is really checkpoint num) in xattrs 
-// 		 * and keep checkpoints hidden with certain commands to navigate them,
-// 		 * so easier for user to just navigate versions or "snaps" by filename?
-// 		 * Think branches are the versions and commits are the checkpoints that are
-// 		 * automatically created based on certain parameters.
-// 		 */
-// 		chmod(path, DIR_PERMS);
-// 		char *vnum = malloc(MAX_VNUM_LEN);
-// 		getxattr(path, CURR_VNUM, vnum, sizeof(MAX_VNUM_LEN));
-// 		char *new_path = malloc(2*MAX_VNUM_LEN);
-// 		strcpy(new_path, path);
-// 		strcat(new_path, "/");
-// 		strcat(new_path, vnum);
-// 		chmod(path, REG_PERMS);
-
-// 		fd = studentfs_open(new_path, fi);
-		
-// 		free(vnum);
-// 		free(new_path);
-// 	} else {
-// 		fd = open(path, fi->flags);
-// 		if (fd == -1)
-// 		return -errno;	
-// 	}
-// 	fi->fh = fd;
-// 	free(sdir_str);
-// 	return 0;
-// }
 
 static int studentfs_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
@@ -1002,7 +1035,7 @@ studentfs_init(struct fuse_conn_info *conn)
 	printf("result of chmod: %d\n", res);
 	res |= system("./scripts/cmdscripts.sh");
 	printf("result of running scripts: %d\n", res);
-
+	
 	if (res == -1)
 		exit(1);
 
@@ -1036,9 +1069,7 @@ static struct fuse_operations studentfs_oper = {
 	.chown		= studentfs_chown,
 	.truncate	= studentfs_truncate,
 	.ftruncate	= studentfs_ftruncate,
-#ifdef HAVE_UTIMENSAT
 	.utimens	= studentfs_utimens,
-#endif
 	.create		= studentfs_create,
 	.open		= studentfs_open,
 	.read		= studentfs_read,
@@ -1054,9 +1085,7 @@ static struct fuse_operations studentfs_oper = {
 	.listxattr	= studentfs_listxattr,
 	.removexattr	= studentfs_removexattr,
 	.flag_nullpath_ok = 1,
-#if HAVE_UTIMENSAT
 	.flag_utime_omit_ok = 1,
-#endif
 };
 
 int main(int argc, char *argv[])
