@@ -12,6 +12,7 @@
 */
 
 #define FUSE_USE_VERSION 26
+#define DEBUG 1
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -21,7 +22,7 @@
 #define _DARWIN_C_SOURCE
 #else
 #define _GNU_SOURCE
-#endif
+#endif 
 
 #include <fuse.h>
 #include <stdio.h>
@@ -371,58 +372,79 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	return 0;
 }
 
-static int snap(const char *path)
-{
-	int res;
-	/* Get base filename and sdir path. */
-	char* base = malloc(MAX_VNUM_LEN);
-	char* sdir_path = malloc(PATH_MAX);
-	strcpy(base, path);
-	strcpy(sdir_path, path);
-	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .VER
-	sdir_path = dirname(sdir_path);
+// static int snap(const char *path)
+// {
+// 	int res;
+// 	/* Get base filename and sdir path. */
+// 	char* base = malloc(MAX_VNUM_LEN);
+// 	char* sdir_path = malloc(PATH_MAX);
+// 	strcpy(base, path);
+// 	strcpy(sdir_path, path);
+// 	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .VER
+// 	sdir_path = dirname(sdir_path);
 
-	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
-	// Parse new filename and optional msg from base
-	char* new_fname = strtok(base, ';');
-	char* msg = strtok(NULL, ';');
-	*/
+// 	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
+// 	// Parse new filename and optional msg from base
+// 	char* new_fname = strtok(base, ';');
+// 	char* msg = strtok(NULL, ';');
+// 	*/
 
-	/* If there is a message, add it to current version. */
-	if (base != NULL) {
-		char* curr_ver;
-		res = getxattr(sdir_path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
-		if (res < 0)
-			return res;
+// 	/* If there is a message, add it to current version. */
+// 	if (base != NULL) {
+// 		char* curr_ver;
+// 		res = getxattr(sdir_path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
+// 		if (res < 0) {
+// 			#ifdef DEBUG
+// 			printf("DEBUG: SDIR DOES NOT EXIST.\n");
+// 			#endif
 
-		// Get path to current version
-		char* curr_ver_path;
-		strcpy(curr_ver_path, sdir_path);
-		curr_ver_path = strcat(curr_ver_path, "/");
-		curr_ver_path = strcat(curr_ver_path, curr_ver);
+// 			mk_sdir(sdir_path);
+// 			return res;
+// 		}
 
-		setxattr(curr_ver_path, "msg", base, MAX_VMSG_LEN, 0);
-		// TODO: SHOULD FILENAME BE VNUM? ALL FILES CONTAIN IT IN XATTR.
-		// SWITCH THIS TO EITHER CHECKING CURR_VER (WHICH SHOULD BE A NAME)
-		// OR LOOKING FOR HIDDEN FILES. (see snap.sh)
-	}
+// 		// Get path to current version
+// 		char* curr_ver_path;
+// 		strcpy(curr_ver_path, sdir_path);
+// 		curr_ver_path = strcat(curr_ver_path, "/");
+// 		curr_ver_path = strcat(curr_ver_path, curr_ver);
 
-	/* Create a new version with the contents of the current version. 
-	   (CURR_VER should be updated in get_next_vnum method) */
-	char* new_ver_path = get_next_vnum(sdir_path);
+// 		setxattr(curr_ver_path, "msg", base, MAX_VMSG_LEN, 0);
+// 		// TODO: SHOULD FILENAME BE VNUM? ALL FILES CONTAIN IT IN XATTR.
+// 		// SWITCH THIS TO EITHER CHECKING CURR_VER (WHICH SHOULD BE A NAME)
+// 		// OR LOOKING FOR HIDDEN FILES. (see snap.sh)
 
-	//TODO: CALL CP COMMAND IN UNIX
-	return 0;
-}
+// 		printf("Message added to old version: %s\n", base);
+// 	}
+
+// 	/* Create a new version with the contents of the current version. 
+// 	   (CURR_VER should be updated in get_next_vnum method) */
+// 	char* new_ver_path = get_next_vnum(sdir_path);
+
+// 	//TODO: CALL CP COMMAND IN UNIX
+// 	printf("New snapfile created.\n");
+// 	return 0;
+// }
 
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
+	#ifdef DEBUG
+	printf("in mkdir\n");
+	printf("path is %s", path);
+	printf("string being compared is %s", path+strlen(path)-strlen(SDIR_FILETYPE));
+	#endif
 	int res;
 
-	//TODO: Do we need to check if it has an sdir already?
-	if (is_snap(path)) {
-		snap(path);
+	if (is_sdir_ftype(path)) {
+		#ifdef DEBUG
+		printf("DEBUG: MAKING SDIR for path %s \n", path);
+		#endif
+		mk_sdir(path);
 	}
+
+	//TODO: Do we need to check if it has an sdir already?
+	// if (is_snap(path)) {
+	// 	snap(path);
+	// }
 
 	res = mkdir(path, mode);
 	if (res == -1)
@@ -561,100 +583,124 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 static int studentfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int fd;
-	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
-	char *sdir_str = malloc(sizeof(SDIR_XATTR));
-	int is_sdir = getxattr(path, SDIR_XATTR, sdir_str, sizeof(SDIR_XATTR));
-	
-	if (is_sdir_ftype(path) && create_flag && access(path, F_OK) == -1) {
-		mk_sdir(path);
-	} else if (!create_flag && is_sdir) {
-		/* TODO: Should we store "vnum" (which is really checkpoint num) in xattrs 
-		 * and keep checkpoints hidden with certain commands to navigate them,
-		 * so easier for user to just navigate versions or "snaps" by filename?
-		 * Think branches are the versions and commits are the checkpoints that are
-		 * automatically created based on certain parameters.
-		 */
-		chmod(path, DIR_PERMS);
-		char *vnum = malloc(MAX_VNUM_LEN);
-		getxattr(path, CURR_VNUM, vnum, sizeof(MAX_VNUM_LEN));
-		char *new_path = malloc(2*MAX_VNUM_LEN);
-		strcpy(new_path, path);
-		strcat(new_path, "/");
-		strcat(new_path, vnum);
-		chmod(path, REG_PERMS);
 
-		fd = studentfs_open(new_path, fi);
-		
-		free(vnum);
-		free(new_path);
-	} else {
-		fd = open(path, fi->flags);
-		if (fd == -1)
-		return -errno;	
-	}
+	fd = open(path, fi->flags);
+	if (fd == -1)
+		return -errno;
+
 	fi->fh = fd;
-	free(sdir_str);
 	return 0;
 }
+// static int studentfs_open(const char *path, struct fuse_file_info *fi)
+// {
+// 	int fd;
+// 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
+// 	char *sdir_str = malloc(sizeof(SDIR_XATTR));
+// 	int is_sdir = getxattr(path, SDIR_XATTR, sdir_str, sizeof(SDIR_XATTR));
+	
+// 	if (is_sdir_ftype(path) && create_flag && access(path, F_OK) == -1) {
+// 		mk_sdir(path);
+// 	} else if (!create_flag && is_sdir) {
+// 		/* TODO: Should we store "vnum" (which is really checkpoint num) in xattrs 
+// 		 * and keep checkpoints hidden with certain commands to navigate them,
+// 		 * so easier for user to just navigate versions or "snaps" by filename?
+// 		 * Think branches are the versions and commits are the checkpoints that are
+// 		 * automatically created based on certain parameters.
+// 		 */
+// 		chmod(path, DIR_PERMS);
+// 		char *vnum = malloc(MAX_VNUM_LEN);
+// 		getxattr(path, CURR_VNUM, vnum, sizeof(MAX_VNUM_LEN));
+// 		char *new_path = malloc(2*MAX_VNUM_LEN);
+// 		strcpy(new_path, path);
+// 		strcat(new_path, "/");
+// 		strcat(new_path, vnum);
+// 		chmod(path, REG_PERMS);
+
+// 		fd = studentfs_open(new_path, fi);
+		
+// 		free(vnum);
+// 		free(new_path);
+// 	} else {
+// 		fd = open(path, fi->flags);
+// 		if (fd == -1)
+// 		return -errno;	
+// 	}
+// 	fi->fh = fd;
+// 	free(sdir_str);
+// 	return 0;
+// }
 
 static int studentfs_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
 {
 	int res;
-	char* new_path = malloc(2*MAX_VNUM_LEN);
-	char temp[sizeof(SDIR_XATTR)];
-	char* vnum = malloc(MAX_VNUM_LEN);
 
-	int is_sdir = getxattr(path, SDIR_XATTR, temp, sizeof(SDIR_XATTR));
-	if (is_sdir != -1) {
-		/* If the file has the xattr do the following:
-		 * Make it accessible as a directory
-		 */		
-		int perm_res = chmod(path, DIR_PERMS);
-		if (perm_res == -1) {
-			printf("Failed to change permissions to directory in read\n");			
-			return -errno;
-		}
+	(void) path;
+	res = pread(fi->fh, buf, size, offset);
+	if (res == -1)
+		res = -errno;
 
-		/* Get the file name of the current version */
-		perm_res = getxattr(path, CURR_VNUM, vnum, MAX_VNUM_LEN);
-		if(perm_res == -1) {
-			printf("Failed to get VNUM xattr in read\n");
-			return -errno;
-		}
-
-		/* Construct path to that directory */
-		strcpy(new_path, path);
-		strcat(new_path, "/");
-		strcat(new_path, vnum);
-
-		/* Read from that file at that offset */
-		FILE *curr_ver = fopen(new_path, "r");
-		fseek(curr_ver, offset, SEEK_SET);
-		res = fread(buf, sizeof(char), size, curr_ver);
-		if (res == -1) {
-			printf("Failed to read in read\n");	
-			return -errno;
-		}
-
-		/* Make the directory appear as a file again */
-		perm_res = chmod(path, REG_PERMS);
-		if (perm_res < 0) {
-			printf("Failed to change permissions to file in read\n");
-			return perm_res;
-		}
-	} else {
-		/* Otherwise treat files as normal */
-		(void) path;
-		res = pread(fi->fh, buf, size, offset);
-		if (res == -1)
-			res = -errno;	
-	}
-
-	free(new_path);
-	free(vnum);
 	return res;
 }
+
+// static int studentfs_read(const char *path, char *buf, size_t size, off_t offset,
+// 		    struct fuse_file_info *fi)
+// {
+// 	int res;
+// 	char* new_path = malloc(2*MAX_VNUM_LEN);
+// 	char temp[sizeof(SDIR_XATTR)];
+// 	char* vnum = malloc(MAX_VNUM_LEN);
+
+// 	int is_sdir = getxattr(path, SDIR_XATTR, temp, sizeof(SDIR_XATTR));
+// 	if (is_sdir != -1) {
+// 		/* If the file has the xattr do the following:
+// 		 * Make it accessible as a directory
+// 		 */		
+// 		int perm_res = chmod(path, DIR_PERMS);
+// 		if (perm_res == -1) {
+// 			printf("Failed to change permissions to directory in read\n");			
+// 			return -errno;
+// 		}
+
+// 		/* Get the file name of the current version */
+// 		perm_res = getxattr(path, CURR_VNUM, vnum, MAX_VNUM_LEN);
+// 		if(perm_res == -1) {
+// 			printf("Failed to get VNUM xattr in read\n");
+// 			return -errno;
+// 		}
+
+// 		/* Construct path to that directory */
+// 		strcpy(new_path, path);
+// 		strcat(new_path, "/");
+// 		strcat(new_path, vnum);
+
+// 		/* Read from that file at that offset */
+// 		FILE *curr_ver = fopen(new_path, "r");
+// 		fseek(curr_ver, offset, SEEK_SET);
+// 		res = fread(buf, sizeof(char), size, curr_ver);
+// 		if (res == -1) {
+// 			printf("Failed to read in read\n");	
+// 			return -errno;
+// 		}
+
+// 		/* Make the directory appear as a file again */
+// 		perm_res = chmod(path, REG_PERMS);
+// 		if (perm_res < 0) {
+// 			printf("Failed to change permissions to file in read\n");
+// 			return perm_res;
+// 		}
+// 	} else {
+// 		/* Otherwise treat files as normal */
+// 		(void) path;
+// 		res = pread(fi->fh, buf, size, offset);
+// 		if (res == -1)
+// 			res = -errno;	
+// 	}
+
+// 	free(new_path);
+// 	free(vnum);
+// 	return res;
+// }
 
 static int studentfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 			size_t size, off_t offset, struct fuse_file_info *fi)
@@ -682,142 +728,7 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	int res;
-	char *val = malloc(sizeof(SDIR_XATTR));
-	if (getxattr(path, SDIR_XATTR, val, 0) >= 0) {
-		char *curr_ver = malloc(MAX_VNUM_LEN);
-		int sz = getxattr(path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
-		if (sz < 0) {
-			return sz;
-		}
 
-		/* Construct path to current/potentially previous version */
-		char *prev_ver_path = malloc(MAX_VNUM_LEN*2);
-		strcpy(prev_ver_path, path);
-		strcat(prev_ver_path, "/");
-		strcat(prev_ver_path, curr_ver);
-
-		/* Make underlying files accessible */
-		int sdir_perms = chmod(path, DIR_PERMS);
-		if (sdir_perms < 0) {
-			return sdir_perms;
-		}
-		
-		/* Construct path to new file -- May be deleted after diffing files */
-		char *next_vnum = get_next_vnum(path);
-		char *next_ver_path = malloc(MAX_VNUM_LEN*2);
-		strcpy(next_ver_path, path);
-		strcat(next_ver_path, "/");
-		strcat(next_ver_path, next_vnum);
-
-		
-		/* Make the new file */
-		FILE *next_ver = fopen(next_ver_path, "w+");
-		FILE *prev_ver = fopen(prev_ver_path, "r");
-		
-		/* Write the contents of the previous file to the next */
-		fseek(prev_ver, 0L, SEEK_END);
-		int prev_sz = ftell(prev_ver);
-		fseek(prev_ver, 0L, SEEK_SET);
-		char *prev_buf = malloc(prev_sz);
-		int read_res = fread(prev_buf, sizeof(char), prev_sz, prev_ver);
-		int write_res = fwrite(prev_buf, sizeof(char), prev_sz, next_ver);
-		if (read_res != write_res) {
-			printf("Didn't write previous version of file to next version properly\n");
-			return -1;
-		}
-		/* Apply the current changes to the file */
-		fseek(next_ver, offset, SEEK_SET);
-		fwrite(buf, sizeof(char), size, next_ver);
-		
-		fclose(next_ver);
-		fclose(prev_ver);
-		
-		/*
-		 * TODO:
-		 * Make number of changes before creating a new version file specific (xattr)
-		 * Use diff to compute the differences instead of using the size of the write
-		 */
-
-		/* Get the number of changes made previously to the current version */
-		// TODO: All SDIR's need this xattr by default.
-		char *chng_xattr = malloc(MAX_VNUM_LEN);
-		int chng_res = getxattr(path, NUM_CHANGES_XATTR, chng_xattr, MAX_VNUM_LEN);
-		if (chng_res < 0) {
-			printf("Trouble getting # of changes xattr in write\n");
-			return chng_res;
-		}
-		int prev_changes = atoi(chng_xattr);
-		
-		/* Get the number of changes made between the files with diff */
-		int curr_changes = ver_changes(prev_ver_path, next_ver_path);
-		// TODO: Reset the number of changes after each new version
-		if (prev_changes && (curr_changes + prev_changes > 2*MAX_NO_CHANGES)) {
-			/* 
-			 * Write two files if there were previous changes and the new changes on top
-			 * of the old changes will go over the size of the maximum number of changes. 
-			 */
-			char *next_next_vnum = _get_next_vnum(path, next_vnum);
-			char *next_next_path = malloc(2*MAX_VNUM_LEN);
-			strcpy(next_next_path, path);
-			strcat(next_next_path, "/");
-			strcat(next_next_path, next_next_vnum);
-
-			FILE *next_next_ver = fopen(next_next_path, "w+");
-			next_ver = fopen(next_ver_path, "r");
-
-			/* Write the contents of the previous file to the next */
-			fseek(next_ver, 0L, SEEK_END);
-			int next_sz = ftell(next_ver);
-			fseek(next_ver, 0L, SEEK_SET);
-			char *next_buf = malloc(next_sz);
-			int read_res = fread(next_buf, sizeof(char), next_sz, next_ver);
-			int write_res = fwrite(next_buf, sizeof(char), next_sz, next_next_ver);
-			if (read_res != write_res) {
-				printf("Didn't write previous version of file to next version properly\n");
-				return -1;
-			}
-
-			/* Update the xattr to be the newest vnum*/
-			int set_res = setxattr(path, CURR_VNUM, next_next_vnum, strlen(next_next_vnum)+1, 0);
-			if (set_res < 0) {
-				printf("Couldn't update setxattr\n");
-				return set_res;
-			}
-			set_res = setxattr(path, NUM_CHANGES_XATTR, "0", 2, 0);
-			if (set_res < 0) {
-				printf("Couldn't update setxattr\n");
-				return set_res;
-			}
-			fclose(next_ver);
-			fclose(next_next_ver);
-		} else if (curr_changes + prev_changes > MAX_NO_CHANGES) {
-			/*
-			 * Write one file if the new changes put the maximum number of changes over the
-			 * limit of changes allotted for the file.
-			 */
-			int set_res = setxattr(path, CURR_VNUM, next_vnum, strlen(next_vnum)+1, 0);
-			if (set_res < 0) {
-				printf("Couldn't update setxattr\n");
-				return set_res;
-			}
-			// TODO: Write number of changes
-		} else {
-			/*
-			 * Write to the old version of the file if there are not enough changes to trigger
-			 * the creation of a new file.
-			 * TODO: Delete the old version of the file
-			 */
-			if(remove(next_ver_path) != 0) {
-				printf("Couldn't delete new file\n");
-			}
-
-			prev_ver = fopen(prev_ver_path, "w");
-			fseek(prev_ver, offset, SEEK_SET);
-			res = fwrite(buf, sizeof(char), size, prev_ver);
-			fclose(prev_ver);
-		}
-
-	}
 	(void) path;
 	res = pwrite(fi->fh, buf, size, offset);
 	if (res == -1)
@@ -825,6 +736,155 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 
 	return res;
 }
+
+// static int studentfs_write(const char *path, const char *buf, size_t size,
+// 		     off_t offset, struct fuse_file_info *fi)
+// {
+// 	int res;
+// 	char *val = malloc(sizeof(SDIR_XATTR));
+// 	if (getxattr(path, SDIR_XATTR, val, 0) >= 0) {
+// 		char *curr_ver = malloc(MAX_VNUM_LEN);
+// 		int sz = getxattr(path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
+// 		if (sz < 0) {
+// 			return sz;
+// 		}
+
+// 		/* Construct path to current/potentially previous version */
+// 		char *prev_ver_path = malloc(MAX_VNUM_LEN*2);
+// 		strcpy(prev_ver_path, path);
+// 		strcat(prev_ver_path, "/");
+// 		strcat(prev_ver_path, curr_ver);
+
+// 		/* Make underlying files accessible */
+// 		int sdir_perms = chmod(path, DIR_PERMS);
+// 		if (sdir_perms < 0) {
+// 			return sdir_perms;
+// 		}
+		
+// 		/* Construct path to new file -- May be deleted after diffing files */
+// 		char *next_vnum = get_next_vnum(path);
+// 		char *next_ver_path = malloc(MAX_VNUM_LEN*2);
+// 		strcpy(next_ver_path, path);
+// 		strcat(next_ver_path, "/");
+// 		strcat(next_ver_path, next_vnum);
+
+		
+// 		/* Make the new file */
+// 		FILE *next_ver = fopen(next_ver_path, "w+");
+// 		FILE *prev_ver = fopen(prev_ver_path, "r");
+		
+// 		/* Write the contents of the previous file to the next */
+// 		fseek(prev_ver, 0L, SEEK_END);
+// 		int prev_sz = ftell(prev_ver);
+// 		fseek(prev_ver, 0L, SEEK_SET);
+// 		char *prev_buf = malloc(prev_sz);
+// 		int read_res = fread(prev_buf, sizeof(char), prev_sz, prev_ver);
+// 		int write_res = fwrite(prev_buf, sizeof(char), prev_sz, next_ver);
+// 		if (read_res != write_res) {
+// 			printf("Didn't write previous version of file to next version properly\n");
+// 			return -1;
+// 		}
+// 		/* Apply the current changes to the file */
+// 		fseek(next_ver, offset, SEEK_SET);
+// 		fwrite(buf, sizeof(char), size, next_ver);
+		
+// 		fclose(next_ver);
+// 		fclose(prev_ver);
+		
+// 		/*
+// 		 * TODO:
+// 		 * Make number of changes before creating a new version file specific (xattr)
+// 		 * Use diff to compute the differences instead of using the size of the write
+// 		 */
+
+// 		/* Get the number of changes made previously to the current version */
+// 		// TODO: All SDIR's need this xattr by default.
+// 		char *chng_xattr = malloc(MAX_VNUM_LEN);
+// 		int chng_res = getxattr(path, NUM_CHANGES_XATTR, chng_xattr, MAX_VNUM_LEN);
+// 		if (chng_res < 0) {
+// 			printf("Trouble getting # of changes xattr in write\n");
+// 			return chng_res;
+// 		}
+// 		int prev_changes = atoi(chng_xattr);
+		
+// 		/* Get the number of changes made between the files with diff */
+// 		int curr_changes = ver_changes(prev_ver_path, next_ver_path);
+// 		// TODO: Reset the number of changes after each new version
+// 		if (prev_changes && (curr_changes + prev_changes > 2*MAX_NO_CHANGES)) {
+// 			/* 
+// 			 * Write two files if there were previous changes and the new changes on top
+// 			 * of the old changes will go over the size of the maximum number of changes. 
+// 			 */
+// 			char *next_next_vnum = _get_next_vnum(path, next_vnum);
+// 			char *next_next_path = malloc(2*MAX_VNUM_LEN);
+// 			strcpy(next_next_path, path);
+// 			strcat(next_next_path, "/");
+// 			strcat(next_next_path, next_next_vnum);
+
+// 			FILE *next_next_ver = fopen(next_next_path, "w+");
+// 			next_ver = fopen(next_ver_path, "r");
+
+// 			/* Write the contents of the previous file to the next */
+// 			fseek(next_ver, 0L, SEEK_END);
+// 			int next_sz = ftell(next_ver);
+// 			fseek(next_ver, 0L, SEEK_SET);
+// 			char *next_buf = malloc(next_sz);
+// 			int read_res = fread(next_buf, sizeof(char), next_sz, next_ver);
+// 			int write_res = fwrite(next_buf, sizeof(char), next_sz, next_next_ver);
+// 			if (read_res != write_res) {
+// 				printf("Didn't write previous version of file to next version properly\n");
+// 				return -1;
+// 			}
+
+// 			/* Update the xattr to be the newest vnum*/
+// 			int set_res = setxattr(path, CURR_VNUM, next_next_vnum, strlen(next_next_vnum)+1, 0);
+// 			if (set_res < 0) {
+// 				printf("Couldn't update setxattr\n");
+// 				return set_res;
+// 			}
+// 			set_res = setxattr(path, NUM_CHANGES_XATTR, "0", 2, 0);
+// 			if (set_res < 0) {
+// 				printf("Couldn't update setxattr\n");
+// 				return set_res;
+// 			}
+// 			fclose(next_ver);
+// 			fclose(next_next_ver);
+// 		} else if (curr_changes + prev_changes > MAX_NO_CHANGES) {
+// 			/*
+// 			 * Write one file if the new changes put the maximum number of changes over the
+// 			 * limit of changes allotted for the file.
+// 			 */
+// 			int set_res = setxattr(path, CURR_VNUM, next_vnum, strlen(next_vnum)+1, 0);
+// 			if (set_res < 0) {
+// 				printf("Couldn't update setxattr\n");
+// 				return set_res;
+// 			}
+// 			// TODO: Write number of changes
+// 		} else {
+// 			/*
+// 			 * Write to the old version of the file if there are not enough changes to trigger
+// 			 * the creation of a new file.
+// 			 * TODO: Delete the old version of the file
+// 			 */
+// 			if(remove(next_ver_path) != 0) {
+// 				printf("Couldn't delete new file\n");
+// 			}
+
+// 			prev_ver = fopen(prev_ver_path, "w");
+// 			fseek(prev_ver, offset, SEEK_SET);
+// 			res = fwrite(buf, sizeof(char), size, prev_ver);
+// 			fclose(prev_ver);
+// 		}
+
+// 	}
+// 	(void) path;
+// 	res = pwrite(fi->fh, buf, size, offset);
+// 	if (res == -1)
+// 		res = -errno;
+
+// 	return res;
+// }
+
 
 static int studentfs_write_buf(const char *path, struct fuse_bufvec *buf,
 		     off_t offset, struct fuse_file_info *fi)
@@ -937,6 +997,15 @@ static int studentfs_removexattr(const char *path, const char *name)
 void *
 studentfs_init(struct fuse_conn_info *conn)
 {
+	/* Make aliases for bashscripts */
+	int res = system("chmod u+x scripts/cmdscripts.sh");
+	printf("result of chmod: %d\n", res);
+	res |= system("./scripts/cmdscripts.sh");
+	printf("result of running scripts: %d\n", res);
+
+	if (res == -1)
+		exit(1);
+
 	return NULL;
 }
 

@@ -1,2 +1,6 @@
 #!/bin/bash
-touch "$1.SDIR"
+if [ -e $1 ]; then
+    echo "SnapDirectory $1 already exists!"
+else
+    mkdir "$1.SDIR"
+fi
