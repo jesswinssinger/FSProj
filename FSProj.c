@@ -432,6 +432,7 @@ static int studentfs_mkdir(const char *path, mode_t mode)
 	printf("path is %s", path);
 	printf("string being compared is %s", path+strlen(path)-strlen(SDIR_FILETYPE));
 	#endif
+
 	int res;
 
 	if (is_sdir_ftype(path)) {
@@ -441,10 +442,9 @@ static int studentfs_mkdir(const char *path, mode_t mode)
 		mk_sdir(path);
 	}
 
-	//TODO: Do we need to check if it has an sdir already?
-	// if (is_snap(path)) {
-	// 	snap(path);
-	// }
+	if (is_snap(path)) {
+		snap(path);
+	}
 
 	res = mkdir(path, mode);
 	if (res == -1)
