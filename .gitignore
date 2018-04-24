@@ -1,0 +1,6 @@
+*.dSYM
+.vscode
+sfs
+studentfs
+consts.h.gch
+.nfs*
