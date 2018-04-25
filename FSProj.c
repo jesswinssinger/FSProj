@@ -825,8 +825,12 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 {
 	int res;
 
-	(void) path;
-	res = pread(fi->fh, buf, size, offset);
+	if (is_sdir(path)) {
+		int fd = get_sdir_file_fd(path);
+		res = pread(fd, buf, size, offset);
+	} else {
+		res = pread(fi->fh, buf, size, offset);
+	}
 	if (res == -1)
 		res = -errno;
 
