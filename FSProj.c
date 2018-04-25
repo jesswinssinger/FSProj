@@ -396,7 +396,7 @@ static int studentfs_getattr(const char *path, struct stat *stbuf)
 	} else {
 		res = lstat(path, stbuf);
 	}
-	
+
 	if (res == -1) {
 		return -errno;
 	}
@@ -436,11 +436,15 @@ static int studentfs_access(const char *path, int mask)
 	//		strcat(new_path, "/.");
 	//		strcat(new_path, base);
 	//		res = access(new_path, mask);
+	//	} else {
+	//		res = access(path, mask);
 	//	}
 	//} else {
 	//	res = access(path, mask);
 	//}
+
 	res = access(path, mask);
+
 	if (res == -1)
 		return -errno;
 
