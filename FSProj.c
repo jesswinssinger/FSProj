@@ -22,7 +22,7 @@
 #define _DARWIN_C_SOURCE
 #else
 #define _GNU_SOURCE
-#endif 
+#endif
 
 #include <fuse.h>
 #include <stdio.h>
@@ -51,16 +51,16 @@ struct studentfs_dirp {
 };
 
 /*
- * TODOs:
+ * TODO:
  * Get Read and Write functionality working.
- * Make sdir's appear as files in call to getattr.
- * 
- */ 
+ * Make sdirs appear as files in call to getattr.
+ */
+
 /* Helper methods */
 // TODO: Write this
 /* Version changes gets the number of changes bytewise made to a file
  * at a file descriptor.
- * 
+ *
  * My thinking on implementation:
  * Store the fd's and associated number of changes made to them in
  * a data structure of file descriptors globally.
@@ -74,7 +74,7 @@ int ver_changes(char *path, char *buf) {
 		printf("Couldn't change directory permissions in ver_changes\n");
 		return res;
 	}
-	
+
 	char *diff_str = malloc(strlen(buf)+30);
 	char *diff_fmt = "echo %s | diff %s -";
 	sprintf(diff_str, diff_fmt, buf, path);
@@ -165,26 +165,26 @@ char *get_next_vnum(const char *path) {
 		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
 		exit(0);
 	}
-	
+
 	return _get_next_vnum(path, curr_vnum);
 }
 
-/* Create the file described by filename in the path to the sdir (path). 
- * 
+/* Create the file described by filename in the path to the sdir (path).
+ *
  * Arguments:
  * path: path to sdir
  * filename: filename within the sdir located at path
  * buf: file contents to be written to the file at filename
  * fsize: number of bytes to write from buf.
- * 
+ *
  * Return val: negative numbers if any system (or wrapper calls) return negative numbers.
- * 
+ *
  */
 int create_sdir_file(char *path, char *filename, char *buf, long fsize) {
 	int res = 0;
-	
+
 	res |= chmod(path, DIR_PERMS);
-	
+
 	// Construct path to filename.
 	char *sdir_file_path = malloc(strlen(path)+100);
 	strcpy(sdir_file_path, path);
@@ -196,18 +196,22 @@ int create_sdir_file(char *path, char *filename, char *buf, long fsize) {
 	res |= fwrite(buf, sizeof(char), fsize, f);
 	res |= fclose(f);
 	res |= chmod(sdir_file_path, REG_PERMS);
-	
+
+	// Add version number to xattrs in case user wants to rename a hidden file.
+	// TODO: Only really necessary if we aren't doing sdir "appear as file" abstraction.
+	setxattr(sdir_file_path, VERR_NUM, filename, MAX_VNUM_LEN, 0);
+
 	// TODO: This doesn't work to make something appear as a file.
 	res |= chmod(path, REG_PERMS);
 	free(sdir_file_path);
 	return res;
 }
 
-/* 
+/*
  * make the SDIR if it does not already exist.
  * If it does exist, return -1.
  * If there is a corresponding file, copy all the information into the snapshot "1"
- * otherwise, just create the directory and a blank file titled "1". 
+ * otherwise, just create the directory and a blank file titled "1".
  */
 int mk_sdir(const char *path) {
 	long fsize = 0;
@@ -238,15 +242,15 @@ int mk_sdir(const char *path) {
 		printf("failed to make SDIR directory\n");
 		return res;
 	}
-	
+
 	// Create the sdir file
 	res = create_sdir_file((char *) path, "1", buf, fsize);
 	if (res < 0) {
 		return res;
-	}		
+	}
 	free(buf);
 	printf("after create sdir file\n");
-	
+
 	// Set the current vnum to be the first file
 	char *ver_no = "1";
 	res = setxattr(path, CURR_VNUM, ver_no, strlen(ver_no)+1, XATTR_CREATE);
@@ -259,12 +263,14 @@ int mk_sdir(const char *path) {
 	if (res < 0) {
 		return res;
 	}
-	
+
 	return 0;
 }
 
 int is_sdir(const char *path) {
 	char *value = malloc(1);
+	//TODO: Can't we just check for CURR_VNUM xattr here and remove unnecessary
+	// additional xattr?
 	int res = getxattr(path, SDIR_XATTR, value, 0);
 	free(value);
 	return res >= 0 ? 1 : 0;
@@ -320,7 +326,7 @@ static int studentfs_access(const char *path, int mask)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	res = access(checked_path, mask);
 	if (res == -1)
 		return -errno;
@@ -333,7 +339,7 @@ static int studentfs_readlink(const char *path, char *buf, size_t size)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	res = readlink(checked_path, buf, size - 1);
 	if (res == -1)
 		return -errno;
@@ -347,7 +353,7 @@ static int studentfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	struct studentfs_dirp *d = malloc(sizeof(struct studentfs_dirp));
 	if (d == NULL)
 		return -ENOMEM;
@@ -418,7 +424,7 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	if (S_ISFIFO(mode))
 		res = mkfifo(checked_path, mode);
 	else
@@ -429,58 +435,65 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	return 0;
 }
 
-// static int snap(const char *path)
-// {
-// 	int res;
-// 	/* Get base filename and sdir path. */
-// 	char* base = malloc(MAX_VNUM_LEN);
-// 	char* sdir_path = malloc(PATH_MAX);
-// 	strcpy(base, path);
-// 	strcpy(sdir_path, path);
-// 	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .VER
-// 	sdir_path = dirname(sdir_path);
+/**
+ * Used for when user wants to save current version permanently and save
+ * new changes to a new copy.
+ */
+static int snap(const char *path)
+{
+	int res;
+	/* Get base filename and sdir path. */
+	char* base = malloc(MAX_VNUM_LEN);
+	char* sdir_path = malloc(PATH_MAX);
+	strcpy(base, path);
+	strcpy(sdir_path, path);
+	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .VER
+	sdir_path = dirname(sdir_path);
 
-// 	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
-// 	// Parse new filename and optional msg from base
-// 	char* new_fname = strtok(base, ';');
-// 	char* msg = strtok(NULL, ';');
-// 	*/
+	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
+	// Parse new filename and optional msg from base
+	char* new_fname = strtok(base, ';');
+	char* msg = strtok(NULL, ';');
+	*/
 
-// 	/* If there is a message, add it to current version. */
-// 	if (base != NULL) {
-// 		char* curr_ver;
-// 		res = getxattr(sdir_path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
-// 		if (res < 0) {
-// 			#ifdef DEBUG
-// 			printf("DEBUG: SDIR DOES NOT EXIST.\n");
-// 			#endif
+	/* If there is a message, add it to current version. */
+	if (base != NULL) {
+		char* curr_ver;
+		res = getxattr(sdir_path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
+		if (res < 0) {
+			#ifdef DEBUG
+			printf("DEBUG: SDIR DOES NOT EXIST.\n");
+			#endif
 
-// 			mk_sdir(sdir_path);
-// 			return res;
-// 		}
+			mk_sdir(sdir_path);
+			return res;
+		}
 
-// 		// Get path to current version
-// 		char* curr_ver_path;
-// 		strcpy(curr_ver_path, sdir_path);
-// 		curr_ver_path = strcat(curr_ver_path, "/");
-// 		curr_ver_path = strcat(curr_ver_path, curr_ver);
+		// Get path to current version
+		char* curr_ver_path;
+		strcpy(curr_ver_path, sdir_path);
+		curr_ver_path = strcat(curr_ver_path, "/");
+		curr_ver_path = strcat(curr_ver_path, curr_ver);
 
-// 		setxattr(curr_ver_path, "msg", base, MAX_VMSG_LEN, 0);
-// 		// TODO: SHOULD FILENAME BE VNUM? ALL FILES CONTAIN IT IN XATTR.
-// 		// SWITCH THIS TO EITHER CHECKING CURR_VER (WHICH SHOULD BE A NAME)
-// 		// OR LOOKING FOR HIDDEN FILES. (see snap.sh)
+		setxattr(curr_ver_path, "msg", base, MAX_VMSG_LEN, 0);
+		// TODO: SHOULD FILENAME BE VNUM? ALL FILES CONTAIN IT IN XATTR.
+		// SWITCH THIS TO EITHER CHECKING CURR_VER (WHICH SHOULD BE A NAME)
+		// OR LOOKING FOR HIDDEN FILES. (see snap.sh)
 
-// 		printf("Message added to old version: %s\n", base);
-// 	}
+		printf("Message added to old version: %s\n", base);
+	}
 
-// 	/* Create a new version with the contents of the current version. 
-// 	   (CURR_VER should be updated in get_next_vnum method) */
-// 	char* new_ver_path = get_next_vnum(sdir_path);
+	/* Create a new version with the contents of the current version.
+	   (CURR_VER should be updated in get_next_vnum method) */
+	// TODO: what kind of naming scheme do we want for the visible versions?
+	// Are they renameable? Does that defeat the purpose of msg?
+	char* new_ver_path = get_next_vnum(sdir_path);
 
-// 	//TODO: CALL CP COMMAND IN UNIX
-// 	printf("New snapfile created.\n");
-// 	return 0;
-// }
+	// TODO: once it works in create_sdir_file, use copy file code here
+	// copy contents of current_ver_path to new_ver_path.
+	printf("New snapfile created.\n");
+	return 0;
+}
 
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
@@ -495,7 +508,7 @@ static int studentfs_mkdir(const char *path, mode_t mode)
 	#endif
 
 	int res;
-	
+
 	if (is_sdir_ftype(path)) {
 		char *checked_path = remove_SDIR_ftype(path);
 		#ifdef DEBUG
@@ -514,8 +527,8 @@ static int studentfs_mkdir(const char *path, mode_t mode)
 	}
 
 	res = mkdir(path, mode);
-	if (res == -1) 
-		return -errno;	
+	if (res == -1)
+		return -errno;
 	return 0;
 }
 
@@ -523,7 +536,7 @@ static int studentfs_unlink(const char *path)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	res = unlink(checked_path);
 	free(checked_path);
 	if (res == -1)
@@ -536,7 +549,7 @@ static int studentfs_rmdir(const char *path)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	res = rmdir(checked_path);
 	free(checked_path);
 	if (res == -1) {
@@ -548,7 +561,7 @@ static int studentfs_rmdir(const char *path)
 static int studentfs_symlink(const char *from, const char *to)
 {
 	int res;
-	
+
 	res = symlink(from, to);
 	if (res == -1)
 		return -errno;
@@ -571,7 +584,7 @@ static int studentfs_rename(const char *from, const char *to)
 static int studentfs_link(const char *from, const char *to)
 {
 	int res;
-	
+
 	res = link(from, to);
 	if (res == -1)
 		return -errno;
@@ -581,7 +594,7 @@ static int studentfs_link(const char *from, const char *to)
 
 static int studentfs_chmod(const char *path, mode_t mode)
 {
-	char *checked_path = remove_SDIR_ftype(path);	
+	char *checked_path = remove_SDIR_ftype(path);
 	int res;
 	res = chmod(checked_path, mode);
 	free(checked_path);
@@ -595,7 +608,7 @@ static int studentfs_chown(const char *path, uid_t uid, gid_t gid)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	res = lchown(checked_path, uid, gid);
 	free(checked_path);
 	if (res == -1)
@@ -608,7 +621,7 @@ static int studentfs_truncate(const char *path, off_t size)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	res = truncate(checked_path, size);
 	free(checked_path);
 	if (res == -1)
@@ -636,7 +649,7 @@ static int studentfs_utimens(const char *path, const struct timespec ts[2])
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	/* don't use utime/utimes since they follow symlinks */
 	res = utimensat(0, checked_path, ts, AT_SYMLINK_NOFOLLOW);
 	free(checked_path);
@@ -665,17 +678,17 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 		/* Create an sdir with no corresponding file */
 		char *sdir_path = remove_SDIR_ftype(path);
 		mk_sdir((const char *) sdir_path);
-		
+
 		strcpy(file_path, sdir_path);
 		strcat(file_path, "/1");
-		
+
 		free(file_path);
 		free(sdir_path);
 	} else if (!create_flag && path_is_sdir) {
 		/* Path does not end with .SDIR in this case */
 
 		/* Open an fd to an sdir's contained file */
-		/* TODO: Should we store "vnum" (which is really checkpoint num) in xattrs 
+		/* TODO: Should we store "vnum" (which is really checkpoint num) in xattrs
 		 * and keep checkpoints hidden with certain commands to navigate them,
 		 * so easier for user to just navigate versions or "snaps" by filename?
 		 * Think branches are the versions and commits are the checkpoints that are
@@ -690,7 +703,7 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 		strcat(file_path, vnum);
 
 		chmod(path, REG_PERMS);
-	
+
 		free(vnum);
 	} else {
 		strcpy(file_path, path);
@@ -699,7 +712,7 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 	fd = open(file_path, fi->flags);
 	free(file_path);
 	if (fd == -1)
-		return -errno;	
+		return -errno;
 	fi->fh = fd;
 	return 0;
 }
@@ -708,7 +721,7 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 {
 	int fd;
 	if (is_sdir_ftype(path)) {
-		// For unknown reasons, FUSE sometimes does not route throug our open method
+		// For unknown reasons, FUSE sometimes does not route through our open method
 		// within the mount point AFAWK thus far. Worth investigating more, but this
 		// works for the time being.
 		fi->flags |= O_CREAT;
@@ -751,10 +764,10 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 // 	if (is_sdir != -1) {
 // 		/* If the file has the xattr do the following:
 // 		 * Make it accessible as a directory
-// 		 */		
+// 		 */
 // 		int perm_res = chmod(path, DIR_PERMS);
 // 		if (perm_res == -1) {
-// 			printf("Failed to change permissions to directory in read\n");			
+// 			printf("Failed to change permissions to directory in read\n");
 // 			return -errno;
 // 		}
 
@@ -775,7 +788,7 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 // 		fseek(curr_ver, offset, SEEK_SET);
 // 		res = fread(buf, sizeof(char), size, curr_ver);
 // 		if (res == -1) {
-// 			printf("Failed to read in read\n");	
+// 			printf("Failed to read in read\n");
 // 			return -errno;
 // 		}
 
@@ -790,7 +803,7 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 // 		(void) path;
 // 		res = pread(fi->fh, buf, size, offset);
 // 		if (res == -1)
-// 			res = -errno;	
+// 			res = -errno;
 // 	}
 
 // 	free(new_path);
@@ -856,7 +869,7 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 // 		if (sdir_perms < 0) {
 // 			return sdir_perms;
 // 		}
-		
+
 // 		/* Construct path to new file -- May be deleted after diffing files */
 // 		char *next_vnum = get_next_vnum(path);
 // 		char *next_ver_path = malloc(MAX_VNUM_LEN*2);
@@ -864,11 +877,11 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 // 		strcat(next_ver_path, "/");
 // 		strcat(next_ver_path, next_vnum);
 
-		
+
 // 		/* Make the new file */
 // 		FILE *next_ver = fopen(next_ver_path, "w+");
 // 		FILE *prev_ver = fopen(prev_ver_path, "r");
-		
+
 // 		/* Write the contents of the previous file to the next */
 // 		fseek(prev_ver, 0L, SEEK_END);
 // 		int prev_sz = ftell(prev_ver);
@@ -883,10 +896,10 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 // 		/* Apply the current changes to the file */
 // 		fseek(next_ver, offset, SEEK_SET);
 // 		fwrite(buf, sizeof(char), size, next_ver);
-		
+
 // 		fclose(next_ver);
 // 		fclose(prev_ver);
-		
+
 // 		/*
 // 		 * TODO:
 // 		 * Make number of changes before creating a new version file specific (xattr)
@@ -902,14 +915,14 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 // 			return chng_res;
 // 		}
 // 		int prev_changes = atoi(chng_xattr);
-		
+
 // 		/* Get the number of changes made between the files with diff */
 // 		int curr_changes = ver_changes(prev_ver_path, next_ver_path);
 // 		// TODO: Reset the number of changes after each new version
 // 		if (prev_changes && (curr_changes + prev_changes > 2*MAX_NO_CHANGES)) {
-// 			/* 
+// 			/*
 // 			 * Write two files if there were previous changes and the new changes on top
-// 			 * of the old changes will go over the size of the maximum number of changes. 
+// 			 * of the old changes will go over the size of the maximum number of changes.
 // 			 */
 // 			char *next_next_vnum = _get_next_vnum(path, next_vnum);
 // 			char *next_next_path = malloc(2*MAX_VNUM_LEN);
@@ -1000,7 +1013,7 @@ static int studentfs_statfs(const char *path, struct statvfs *stbuf)
 {
 	int res;
 	char *checked_path = remove_SDIR_ftype(path);
-	
+
 	res = statvfs(checked_path, stbuf);
 	free(checked_path);
 	if (res == -1)
@@ -1058,7 +1071,7 @@ static int studentfs_fsync(const char *path, int isdatasync,
 static int studentfs_setxattr(const char *path, const char *name, const char *value,
 			size_t size, int flags)
 {
-	char *checked_path = remove_SDIR_ftype(path);	
+	char *checked_path = remove_SDIR_ftype(path);
 	int res = lsetxattr(path, name, value, size, flags);
 	free(checked_path);
 	if (res == -1)
@@ -1069,7 +1082,7 @@ static int studentfs_setxattr(const char *path, const char *name, const char *va
 static int studentfs_getxattr(const char *path, const char *name, char *value,
 			size_t size)
 {
-	char *checked_path = remove_SDIR_ftype(path);	
+	char *checked_path = remove_SDIR_ftype(path);
 	int res = lgetxattr(checked_path, name, value, size);
 
 	if (res == -1)
@@ -1079,7 +1092,7 @@ static int studentfs_getxattr(const char *path, const char *name, char *value,
 
 static int studentfs_listxattr(const char *path, char *list, size_t size)
 {
-	char *checked_path = remove_SDIR_ftype(path);	
+	char *checked_path = remove_SDIR_ftype(path);
 	int res = llistxattr(path, list, size);
 	free(checked_path);
 
@@ -1090,10 +1103,10 @@ static int studentfs_listxattr(const char *path, char *list, size_t size)
 
 static int studentfs_removexattr(const char *path, const char *name)
 {
-	char *checked_path = remove_SDIR_ftype(path);	
+	char *checked_path = remove_SDIR_ftype(path);
 	int res = lremovexattr(path, name);
 	free(checked_path);
-	
+
 	if (res == -1)
 		return -errno;
 	return 0;
@@ -1107,7 +1120,7 @@ studentfs_init(struct fuse_conn_info *conn)
 	printf("result of chmod: %d\n", res);
 	res |= system("./scripts/cmdscripts.sh");
 	printf("result of running scripts: %d\n", res);
-	
+
 	if (res == -1)
 		exit(1);
 
@@ -1141,7 +1154,7 @@ static struct fuse_operations studentfs_oper = {
 	.chown		= studentfs_chown,
 	.truncate	= studentfs_truncate,
 	.ftruncate	= studentfs_ftruncate,
-#if HAVE_UTIMENSAT	
+#if HAVE_UTIMENSAT
 	.utimens	= studentfs_utimens,
 #endif
 	.create		= studentfs_create,
