@@ -496,7 +496,7 @@ static int snap(const char *path)
 
 	// TODO: once it works in create_sdir_file, use copy file code here
 	// copy contents of current_ver_path to new_ver_path.
-	printf("New snapfile created.\n");
+	printf("Archived this version of %s.\n", basename(sdir_path));
 	return 0;
 }
 
@@ -542,9 +542,20 @@ static int _switch_curr_verr(const char* sdir_path, const char *new_curr_vnum,
 		return res;
 
 	res = setxattr(old_verr_path, MSG_XATTR, msg, sizeof(MAX_VMSG_LEN));
+
+	if (res < 0)
+		return res;
+
 	free(old_verr_path);
 	free(old_verr_num);
-	return setxattr(sdir_path, CURR_VNUM, new_curr_vnum, sizeof(MAX_VNUM_LEN));
+
+	res = setxattr(sdir_path, CURR_VNUM, new_curr_vnum, sizeof(MAX_VNUM_LEN));
+
+	if (res < 0)
+		return res;
+
+	printf("Switched working version to %s.", new_curr_vnum);
+	return res;
 }
 
 static int studentfs_mkdir(const char *path, mode_t mode)
