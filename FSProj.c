@@ -287,27 +287,6 @@ int create_sdir_file(char *path, char *filename, char *buf, long fsize) {
 	return res;
 }
 
-static int studentfs_setxattr(const char *path, const char *name, const char *value,
-	size_t size, int flags)
-{
-int res = lsetxattr(path, name, value, size, flags);
-
-if (res == -1)
-return -errno;
-return 0;
-}
-
-
-static int studentfs_getxattr(const char *path, const char *name, char *value,
-	size_t size)
-{
-int res = lgetxattr(path, name, value, size);
-
-if (res == -1)
-return -errno;
-return res;
-}
-
 /* 
  * make the SDIR if it does not already exist.
  * If it does exist, return -1.
@@ -1167,7 +1146,26 @@ static int studentfs_fsync(const char *path, int isdatasync,
 }
 
 /* xattr operations are optional and can safely be left unimplemented */
+static int studentfs_setxattr(const char *path, const char *name, const char *value,
+	size_t size, int flags)
+{
+	int res = lsetxattr(path, name, value, size, flags);
 
+	if (res == -1)
+		return -errno;
+	return 0;
+}
+
+
+static int studentfs_getxattr(const char *path, const char *name, char *value,
+	size_t size)
+{
+	int res = lgetxattr(path, name, value, size);
+
+	if (res == -1)
+		return -errno;
+	return res;
+}
 
 static int studentfs_listxattr(const char *path, char *list, size_t size)
 {
