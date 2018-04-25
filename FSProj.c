@@ -452,7 +452,7 @@ static int snap(const char *path)
 	char* sdir_path = malloc(PATH_MAX);
 	strcpy(base, path);
 	strcpy(sdir_path, path);
-	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .VER
+	base = memcpy(base, basename(base), strlen(base) - sizeof(SNAP_SUFFIX)); // Remove .SNA
 	sdir_path = dirname(sdir_path);
 
 	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
@@ -500,14 +500,15 @@ static int snap(const char *path)
 	return 0;
 }
 
-static int switch(const char* path)
+/* For "switch" command. Must be called in working sdir. */
+static int switch_curr_verr(const char* path)
 {
 	char* base = malloc(MAX_VNUM_LEN);
 	char* sdir_path = malloc(PATH_MAX);
 
 	// Get base
 	strcpy(base, path);
-	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .SWI
+	base = memcpy(base, basename(base), strlen(base) - sizeof(SWITCH_SUFFIX)); // Remove .SWI
 
 	// Get directory path
 	strcpy(sdir_path, path);
@@ -517,12 +518,12 @@ static int switch(const char* path)
 	char* new_curr_vnum = strtok(base, ';');
 	char* msg = strtok(NULL, ';');
 
-	return _switch(sdir_path, new_curr_vnum, msg);
+	return _switch_curr_verr(sdir_path, new_curr_vnum, msg);
 }
 
 /* Switch current version number based on user command
  */
-static int _switch(const char* sdir_path, const char *new_curr_vnum,
+static int _switch_curr_verr(const char* sdir_path, const char *new_curr_vnum,
 	const char *msg)
 {
 	int res;
@@ -549,9 +550,7 @@ static int _switch(const char* sdir_path, const char *new_curr_vnum,
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
 	//TODO: Do we need to check if it has an sdir already?
-	// if (is_snap(path)) {
-	// 	snap(path);
-	// }
+
 	#ifdef DEBUG
 	printf("in mkdir\n");
 	printf("path is %s", path);
@@ -575,6 +574,10 @@ static int studentfs_mkdir(const char *path, mode_t mode)
 
 	if (is_snap(path)) {
 		snap(path);
+	}
+
+	else if (is_switch(path)) {
+		switch_curr_verr(path);
 	}
 
 	res = mkdir(path, mode);
