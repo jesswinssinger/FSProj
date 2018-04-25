@@ -2,5 +2,5 @@
 .vscode
 sfs
 studentfs
-consts.h.gch
+*.h.gch
 .nfs*
