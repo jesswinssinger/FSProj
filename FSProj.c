@@ -450,12 +450,12 @@ static int snap(const char *path)
 {
 	int res;
 	/* Get base filename and sdir path. */
-	char* base = malloc(MAX_VNUM_LEN);
-	char* sdir_path = malloc(PATH_MAX);
+	char base[MAX_VNUM_LEN];
+	char sdir_path[PATH_MAX];
 	strcpy(base, path);
 	strcpy(sdir_path, path);
-	base = memcpy(base, basename(base), strlen(base) - sizeof(SNAP_SUFFIX)); // Remove .SNA
-	sdir_path = dirname(sdir_path);
+	memcpy(base, basename(base), strlen(base) - sizeof(SNAP_SUFFIX)); // Remove .SNA
+	dirname(sdir_path);
 
 	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
 	// Parse new filename and optional msg from base
@@ -465,7 +465,7 @@ static int snap(const char *path)
 
 	/* If there is a message, add it to current version. */
 	if (base != NULL) {
-		char* curr_ver;
+		char curr_ver[MAX_VNUM_LEN];
 		res = getxattr(sdir_path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
 		if (res < 0) {
 			#ifdef DEBUG
@@ -476,10 +476,10 @@ static int snap(const char *path)
 		}
 
 		// Get path to current version
-		char* curr_ver_path;
+		char curr_ver_path[PATH_MAX];
 		strcpy(curr_ver_path, sdir_path);
-		curr_ver_path = strcat(curr_ver_path, "/");
-		curr_ver_path = strcat(curr_ver_path, curr_ver);
+		strcat(curr_ver_path, "/");
+		strcat(curr_ver_path, curr_ver);
 
 		setxattr(curr_ver_path, "msg", base, MAX_VMSG_LEN, 0);
 		// TODO: SHOULD FILENAME BE VNUM? ALL FILES CONTAIN IT IN XATTR.
@@ -493,7 +493,8 @@ static int snap(const char *path)
 	   (CURR_VER should be updated in get_next_vnum method) */
 	// TODO: what kind of naming scheme do we want for the visible versions?
 	// Are they renameable? Does that defeat the purpose of msg?
-	char* new_ver_path = get_next_vnum(sdir_path);
+	char new_ver_path[PATH_MAX];
+	strcpy(new_ver_path, get_next_vnum(sdir_path));
 
 	// TODO: once it works in create_sdir_file, use copy file code here
 	// copy contents of current_ver_path to new_ver_path.
@@ -505,21 +506,20 @@ static int snap(const char *path)
 /* For "switch" command. Must be called in working sdir. */
 static int switch_curr_verr(const char* path)
 {
-	char* base = malloc(MAX_VNUM_LEN);
-	char* sdir_path = malloc(PATH_MAX);
-	const char* delim = ";";
+	char base[MAX_VNUM_LEN];
+	char sdir_path[PATH_MAX];
 
 	// Get base
 	strcpy(base, path);
-	base = memcpy(base, basename(base), strlen(base) - sizeof(SWITCH_SUFFIX)); // Remove .SWI
+	memcpy(base, basename(base), strlen(base) - strlen(SWITCH_SUFFIX)); // Remove .SWI
 
 	// Get directory path
 	strcpy(sdir_path, path);
-	sdir_path = dirname(sdir_path);
+	dirname(sdir_path);
 
 	// Parse new curr_vnum and optional msg from base
-	char* new_curr_vnum = strtok(base, delim);
-	char* msg = strtok(NULL, delim);
+	char* new_curr_vnum = strtok(base, ";");
+	char* msg = strtok(NULL, ";");
 
 	return _switch_curr_verr(sdir_path, new_curr_vnum, msg);
 }
@@ -532,25 +532,22 @@ static int _switch_curr_verr(const char* sdir_path, const char *new_curr_vnum,
 	int res;
 	//TODO: this relies on get_next_vnum working properly, i.e. branching
 	// correctly from this vnum for future edits (if we care about that)...
-	char* old_verr_path = malloc(PATH_MAX);
-	char* old_verr_num = malloc(MAX_VNUM_LEN);
+	char old_verr_path[PATH_MAX];
+	char old_verr_num[MAX_VNUM_LEN];
 
-	res = getxattr(sdir_path, CURR_VNUM, old_verr_num, sizeof(MAX_VNUM_LEN));
+	res = getxattr(sdir_path, CURR_VNUM, old_verr_num, MAX_VNUM_LEN);
 	if (res < 0)
 		return res;
 
 	strcpy(old_verr_path, sdir_path);
 	strcat(old_verr_path, old_verr_num);
 
-	res = setxattr(old_verr_path, MSG_XATTR, msg, sizeof(MAX_VMSG_LEN), 0);
+	res = setxattr(old_verr_path, MSG_XATTR, msg, MAX_VMSG_LEN, 0);
 
 	if (res < 0)
 		return res;
 
-	free(old_verr_path);
-	free(old_verr_num);
-
-	res = setxattr(sdir_path, CURR_VNUM, new_curr_vnum, sizeof(MAX_VNUM_LEN), 0);
+	res = setxattr(sdir_path, CURR_VNUM, new_curr_vnum, MAX_VNUM_LEN, 0);
 
 	if (res < 0)
 		return res;
@@ -733,12 +730,13 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
 	int path_is_sdir = is_sdir(path);
 
-	char *file_path = malloc(2*MAX_VNUM_LEN);
 	/* Final path used to get the file descriptor for the file */
 	if (create_flag && path_is_sdir) {
 		printf("Tried to create an sdir when one was already created\n");
 		return -1;
 	}
+
+	char file_path[PATH_MAX];
 
 	if (is_sdir_ftype(path) && create_flag) {
 		/* Path ends with .SDIR here */
@@ -749,7 +747,6 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 		strcpy(file_path, sdir_path);
 		strcat(file_path, "/1");
 
-		free(file_path);
 		free(sdir_path);
 	} else if (!create_flag && path_is_sdir) {
 		/* Path does not end with .SDIR in this case */
@@ -762,7 +759,7 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 		 * automatically created based on certain parameters.
 		 */
 		chmod(path, DIR_PERMS);
-		char *vnum = malloc(MAX_VNUM_LEN);
+		char vnum[MAX_VNUM_LEN];
 		getxattr(path, CURR_VNUM, vnum, sizeof(MAX_VNUM_LEN));
 
 		strcpy(file_path, path);
@@ -770,17 +767,15 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 		strcat(file_path, vnum);
 
 		chmod(path, REG_PERMS);
-
-		free(vnum);
 	} else {
 		strcpy(file_path, path);
 	}
 
 	fd = open(file_path, fi->flags);
-	free(file_path);
 	if (fd == -1)
 		return -errno;
 	fi->fh = fd;
+
 	return 0;
 }
 
@@ -823,9 +818,9 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 // 		    struct fuse_file_info *fi)
 // {
 // 	int res;
-// 	char* new_path = malloc(2*MAX_VNUM_LEN);
+// 	char new_path[2*MAX_VNUM_LEN];
 // 	char temp[sizeof(SDIR_XATTR)];
-// 	char* vnum = malloc(MAX_VNUM_LEN);
+// 	char vnum[MAX_VNUM_LEN];
 
 // 	int is_sdir = getxattr(path, SDIR_XATTR, temp, sizeof(SDIR_XATTR));
 // 	if (is_sdir != -1) {
@@ -873,8 +868,6 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 // 			res = -errno;
 // 	}
 
-// 	free(new_path);
-// 	free(vnum);
 // 	return res;
 // }
 
