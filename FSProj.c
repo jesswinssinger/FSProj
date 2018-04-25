@@ -55,8 +55,10 @@ struct studentfs_dirp {
  * Test open
  * Test mk_sdir
  * Test read/write
+ * Test get_curr_vnum
  * Test snap command
  * Test switch command
+ * Test ver_changes
  * REFACTOR: Move snap, switch, mk_sdir to separate file
  * Make sdirs appear as files in call to getattr.
  */
@@ -204,7 +206,7 @@ int create_sdir_file(char *path, char *filename, char *buf, long fsize) {
 
 	// Add version number to xattrs in case user wants to rename a hidden file.
 	// TODO: Only really necessary if we aren't doing sdir "appear as file" abstraction.
-	setxattr(sdir_file_path, VERR_NUM, filename, MAX_VNUM_LEN, 0);
+	setxattr(sdir_file_path, VNUM, filename, MAX_VNUM_LEN, 0);
 
 	// TODO: This doesn't work to make something appear as a file.
 	res |= chmod(path, REG_PERMS);
@@ -457,8 +459,8 @@ static int snap(const char *path)
 
 	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
 	// Parse new filename and optional msg from base
-	char* new_fname = strtok(base, ';');
-	char* msg = strtok(NULL, ';');
+	char* new_fname = strtok(base, ";");
+	char* msg = strtok(NULL, ";");
 	*/
 
 	/* If there is a message, add it to current version. */
@@ -470,7 +472,6 @@ static int snap(const char *path)
 			printf("DEBUG: SDIR DOES NOT EXIST.\n");
 			#endif
 
-			mk_sdir(sdir_path);
 			return res;
 		}
 
@@ -496,6 +497,7 @@ static int snap(const char *path)
 
 	// TODO: once it works in create_sdir_file, use copy file code here
 	// copy contents of current_ver_path to new_ver_path.
+
 	printf("Archived this version of %s.\n", basename(sdir_path));
 	return 0;
 }
@@ -505,6 +507,7 @@ static int switch_curr_verr(const char* path)
 {
 	char* base = malloc(MAX_VNUM_LEN);
 	char* sdir_path = malloc(PATH_MAX);
+	const char* delim = ";";
 
 	// Get base
 	strcpy(base, path);
@@ -515,8 +518,8 @@ static int switch_curr_verr(const char* path)
 	sdir_path = dirname(sdir_path);
 
 	// Parse new curr_vnum and optional msg from base
-	char* new_curr_vnum = strtok(base, ';');
-	char* msg = strtok(NULL, ';');
+	char* new_curr_vnum = strtok(base, delim);
+	char* msg = strtok(NULL, delim);
 
 	return _switch_curr_verr(sdir_path, new_curr_vnum, msg);
 }
@@ -536,12 +539,10 @@ static int _switch_curr_verr(const char* sdir_path, const char *new_curr_vnum,
 	if (res < 0)
 		return res;
 
-	res = strcpy(old_verr_path, sdir_path);
-	res |= strcat(old_verr_path, old_verr_num);
-	if (res < 0)
-		return res;
+	strcpy(old_verr_path, sdir_path);
+	strcat(old_verr_path, old_verr_num);
 
-	res = setxattr(old_verr_path, MSG_XATTR, msg, sizeof(MAX_VMSG_LEN));
+	res = setxattr(old_verr_path, MSG_XATTR, msg, sizeof(MAX_VMSG_LEN), 0);
 
 	if (res < 0)
 		return res;
@@ -549,7 +550,7 @@ static int _switch_curr_verr(const char* sdir_path, const char *new_curr_vnum,
 	free(old_verr_path);
 	free(old_verr_num);
 
-	res = setxattr(sdir_path, CURR_VNUM, new_curr_vnum, sizeof(MAX_VNUM_LEN));
+	res = setxattr(sdir_path, CURR_VNUM, new_curr_vnum, sizeof(MAX_VNUM_LEN), 0);
 
 	if (res < 0)
 		return res;
