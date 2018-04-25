@@ -59,42 +59,61 @@ struct studentfs_dirp {
  */ 
 /* Helper methods */
 
-char *get_sdir_path(char *path){
-	char hidden_path[MAX_PATH];
-	strcpy(hidden_path, dirname(path));
+char *get_sdir_path(const char *path){
+	char *hidden_path = malloc(PATH_MAX+1);
+	char base_cp[PATH_MAX];
+	strcpy(base_cp, path);
+	char dir_cp[PATH_MAX];
+	strcpy(dir_cp, path);
+	if (is_sdir_ftype(path)) {
+
+	}
+	printf("path is %s in sdir_path\n", path);
+	strcpy(hidden_path, dirname(dir_cp));
 	strcat(hidden_path, "/.");
-	strcat(hidden_path, basename(path));
-	strcat(hidden_path, SDIR_XATTR);
+	strcat(hidden_path, basename(base_cp));
+	strcat(hidden_path, SDIR_FILETYPE);
 	return hidden_path;
 }
 
-char *get_metadata_path(char *path){
+char *get_metadata_path(const char *path){
 	char *hidden_path = get_sdir_path(path);
 	strcat(hidden_path, METADATA_FILENAME);
 	return hidden_path;
 }
 
-char *get_sdir_file_fd(char *path) {
+int get_sdir_file_fd(const char *path) {
 	char *meta_path = get_metadata_path(path);
-
-	FILE *meta_f = fopen(meta_path, O_RDWR);
-	char *vnum[MAX_VNUM_LEN];
+	printf("metapath is %s\n", meta_path);
+	FILE *meta_f = fopen(meta_path, "rb+");
+	char vnum[MAX_VNUM_LEN];
 	int sz = fread(vnum, 1, MAX_VNUM_LEN, meta_f);
 	if (sz < 0) {
 		printf("Error reading from metadata %d\n", errno);
 		return sz;
+		// Fuck the user!
+		// exit(0);
 	}
-
+	fclose(meta_f);
+	free(meta_path);
+	
 	char *hidden_path = get_sdir_path(path);
 	strcat(hidden_path, "/");
 	strcat(hidden_path, vnum);
-	return open(hidden_path, O_RDWR);
+	int fd = open(hidden_path, O_RDWR);
+	free(hidden_path);
+	return fd;
 }
 
 int is_sdir(const char *path) {
-	char path_w_sdir[MAX_PATH];
-	char *base = basename(path);
-	char *dir = dirname(path);
+	char base_cp[PATH_MAX];
+	strcpy(base_cp, path);
+	char dir_cp[PATH_MAX];
+	strcpy(dir_cp, path);
+	
+	char path_w_sdir[PATH_MAX];
+	char *base = basename(base_cp);
+	char *dir = dirname(dir_cp);
 
 	strcpy(path_w_sdir, dir);
 	strcat(path_w_sdir, "/.");
@@ -320,7 +339,7 @@ int mk_sdir(char *path) {
 		printf("unlink res is %d\n", unlink_res);
 	}
 	/* Make the SDIR */
-	res = mkdir(path, S_IRWXU | 0755);
+	res = mkdir(path, S_IFDIR | 0755);
 	if (res < 0) {
 		printf("failed to make SDIR directory\n");
 		return res;
@@ -329,7 +348,7 @@ int mk_sdir(char *path) {
 	strcpy(dest, path);
 	strcat(dest, "/1");
 
-	res = open(dest, O_CREAT | O_RDWR | O_TRUNC, S_IRWXU | 0755);
+	res = open(dest, O_CREAT | O_RDWR | O_TRUNC, 0755);
 	// Create the sdir file
 	//res = create_sdir_file(path, "1", buf, fsize);
 	if (res < 0) {
@@ -376,12 +395,6 @@ static int studentfs_getattr(const char *path, struct stat *stbuf)
 	if (res == -1) {
 		free(checked_path);
 		return -errno;
-	}
-
-	if (is_sdir(checked_path)) {
-		printf("inside is_sdir\n");
-		stbuf->st_mode = S_IFREG | S_IRWXU | 0755;
-		printf("after changing mode\n");
 	}
 
 	free(checked_path);
@@ -523,8 +536,8 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 // 	char* sdir_path = malloc(PATH_MAX);
 // 	strcpy(base, path);
 // 	strcpy(sdir_path, path);
-// 	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .VER
-// 	sdir_path = dirname(sdir_path);
+// 	base = memcpy(base, basename((char *) base), strlen(base) - 4); // Remove .VER
+// 	sdir_path = dirname((char *) sdir_path);
 
 // 	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
 // 	// Parse new filename and optional msg from base
@@ -711,74 +724,82 @@ static int studentfs_ftruncate(const char *path, off_t size,
 	return 0;
 }
 
-#ifdef HAVE_UTIMENSAT
 static int studentfs_utimens(const char *path, const struct timespec ts[2])
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
-	
+	char checked_path[PATH_MAX];
+	strcpy(checked_path, path);
+	if (is_sdir_ftype(path)) {
+		
+	}
 	/* don't use utime/utimes since they follow symlinks */
 	res = utimensat(0, checked_path, ts, AT_SYMLINK_NOFOLLOW);
-	free(checked_path);
 	if (res == -1)
 		return -errno;
 
 	return 0;
 }
-#endif
 
 static int studentfs_open(const char *path, struct fuse_file_info *fi) {
 	int fd = -1;
 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
-	int res; 
+	int res = 0; 
 
-	char *path_w_sdir[MAX_PATH];
+	char path_w_sdir[PATH_MAX];
 	strcpy(path_w_sdir, path);
 	strcat(path_w_sdir, SDIR_FILETYPE);
 	
 	if (create_flag && is_sdir_ftype(path)) {
+		char base_cp[PATH_MAX];
+		strcpy(base_cp, path);
 		// Create a hidden directory
-		char *base = basename(path);
-		char *dir  = dirname(path);
-		char hidden_path[MAX_PATH];
+		char *base = basename((char *) base_cp);
+		
+		char dir_cp[PATH_MAX];
+		strcpy(dir_cp, path);
+		char *dir  = dirname((char *) dir_cp);
+		
+		char hidden_path[PATH_MAX];
 		strcpy(hidden_path, dir);
 		strcat(hidden_path, "/");
 		strcat(hidden_path, ".");
 		strcat(hidden_path, base);
-
+		
 		res |= mkdir(hidden_path, S_IRWXU | 0755);
 		
 		// Create a file in the SDIR directory
-		char *hidden_file_name[MAX_PATH];
+		char hidden_file_name[PATH_MAX];
 		strcpy(hidden_file_name, hidden_path);
 		strcat(hidden_file_name, "/1");
-		fd |= creat(hidden_file_name, S_IRWXU | 0755);
-
+		fd = creat(hidden_file_name, S_IRWXU | 0755);
+		
 		// Create a file with information on the SDir.
-		char *metadata_file[MAX_PATH];
+		char metadata_file[PATH_MAX];
 		strcpy(metadata_file, hidden_path);
-		strcpy(METADATA_FILENAME);
+		strcat(metadata_file, METADATA_FILENAME);
 		int meta_fd = creat(metadata_file, S_IRWXU | 0755);
 		if (meta_fd < 0) {
 			printf("trouble making the metadata file %d\n", errno);
 			return meta_fd;
 		}
+		
 		res |= write(meta_fd, "1", 2);
 		res |= close(meta_fd);
 		if (res < 0) {
 			printf("error writing metadata\n");
 			return res;
 		}
-
+		
 		// Create the corresponding file
 		char *path_wo_sdir = remove_SDIR_ftype(path);
-		
-		res |= creat(path_wo_sdir, 0755 | S_IRWXU);
+		res |= open(path_wo_sdir, O_CREAT | O_RDWR, 0755 | S_IRWXU);
 		if (res < 0) {
 			printf("error making sdir \n");
 			return res;
 		}
+		close(res);
 		free(path_wo_sdir);
+
 	} else if (is_sdir(path) && access(path, F_OK) != -1) {
 		// An SDIR exists, open a path to the current file
 		fd = get_sdir_file_fd(path);
@@ -799,61 +820,6 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi) {
 	fi->fh = fd;
 	return 0;
 }
-static int studentfs_open(const char *path, struct fuse_file_info *fi)
-{
-	int fd = -1;
-	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
-	int path_is_sdir = is_sdir(path);
-
-	char *file_path = malloc(PATH_MAX);
-	/* Final path used to get the file descriptor for the file */
-	if (create_flag && path_is_sdir) {
-		printf("Tried to create an sdir when one was already created\n");
-		return -1;
-	}
-
-	if (is_sdir_ftype(path) && create_flag) {
-		/* Path ends with .SDIR here */
-		/* Create an sdir with no corresponding file */
-		char *sdir_path = remove_SDIR_ftype(path);
-		mk_sdir(sdir_path);
-		
-		strcpy(file_path, sdir_path);
-		strcat(file_path, "/1");
-		
-		free(sdir_path);
-	} else if (!create_flag && path_is_sdir) {
-		/* Path does not end with .SDIR in this case */
-
-		/* Open an fd to an sdir's contained file */
-		/* TODO: Should we store "vnum" (which is really checkpoint num) in xattrs 
-		 * and keep checkpoints hidden with certain commands to navigate them,
-		 * so easier for user to just navigate versions or "snaps" by filename?
-		 * Think branches are the versions and commits are the checkpoints that are
-		 * automatically created based on certain parameters.
-		 */
-		chmod(path, DIR_PERMS);
-		char *vnum = malloc(MAX_VNUM_LEN);
-		getxattr(path, CURR_VNUM, vnum, sizeof(MAX_VNUM_LEN));
-
-		strcpy(file_path, path);
-		strcat(file_path, "/");
-		strcat(file_path, vnum);
-
-		chmod(path, REG_PERMS);
-	
-		free(vnum);
-	} else {
-		strcpy(file_path, path);
-	}
-
-	fd = open(file_path, fi->flags, S_IRWXU | 0755);
-	free(file_path);
-	if (fd == -1)
-		return -errno;
-	fi->fh = fd;
-	return 0;
-}
 
 static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
@@ -862,8 +828,8 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 		// For unknown reasons, FUSE sometimes does not route throug our open method
 		// within the mount point AFAWK thus far. Worth investigating more, but this
 		// works for the time being.
-		int res = studentfs_open(path, fi);
-		if (res < 0)
+		studentfs_open(path, fi);
+		if (fi->fh < 0)
 			return -errno;
 		return 0;
 	}
@@ -1271,9 +1237,7 @@ static struct fuse_operations studentfs_oper = {
 	.chown		= studentfs_chown,
 	.truncate	= studentfs_truncate,
 	.ftruncate	= studentfs_ftruncate,
-#if HAVE_UTIMENSAT	
 	.utimens	= studentfs_utimens,
-#endif
 	.create		= studentfs_create,
 	.open		= studentfs_open,
 	.read		= studentfs_read,
@@ -1289,9 +1253,7 @@ static struct fuse_operations studentfs_oper = {
 	.listxattr	= studentfs_listxattr,
 	.removexattr	= studentfs_removexattr,
 	.flag_nullpath_ok = 1,
-#if HAVE_UTIMENSAT
 	.flag_utime_omit_ok = 1,
-#endif
 };
 
 int main(int argc, char *argv[])
