@@ -61,17 +61,17 @@ struct studentfs_dirp {
 
 char *get_sdir_path(const char *path){
 	char *hidden_path = malloc(PATH_MAX+1);
-	char base_cp[PATH_MAX];
+	char *base_cp = malloc(PATH_MAX+1);
 	strcpy(base_cp, path);
-	char dir_cp[PATH_MAX];
+	char *dir_cp = malloc(PATH_MAX+1);
 	strcpy(dir_cp, path);
-	if (is_sdir_ftype(path)) {
 
-	}
-	printf("path is %s in sdir_path\n", path);
-	strcpy(hidden_path, dirname(dir_cp));
+	base_cp = basename(base_cp);
+	dir_cp  = dirname(dir_cp);
+
+	strcpy(hidden_path, dir_cp);
 	strcat(hidden_path, "/.");
-	strcat(hidden_path, basename(base_cp));
+	strcat(hidden_path, base_cp);
 	strcat(hidden_path, SDIR_FILETYPE);
 	return hidden_path;
 }
@@ -286,11 +286,8 @@ int create_sdir_file(char *path, char *filename, char *buf, long fsize) {
 static int studentfs_setxattr(const char *path, const char *name, const char *value,
 	size_t size, int flags)
 {
-char *checked_path = remove_SDIR_ftype(path);	
-int res = lsetxattr(checked_path, name, value, size, flags);
-printf("checked_path is %s\n", checked_path);
+int res = lsetxattr(path, name, value, size, flags);
 
-free(checked_path);
 if (res == -1)
 return -errno;
 return 0;
@@ -300,8 +297,7 @@ return 0;
 static int studentfs_getxattr(const char *path, const char *name, char *value,
 	size_t size)
 {
-char *checked_path = remove_SDIR_ftype(path);	
-int res = lgetxattr(checked_path, name, value, size);
+int res = lgetxattr(path, name, value, size);
 
 if (res == -1)
 return -errno;
@@ -388,16 +384,15 @@ int mk_sdir(char *path) {
 
 static int studentfs_getattr(const char *path, struct stat *stbuf)
 {
-	char *checked_path = remove_SDIR_ftype(path);
 	int res;
 
-	res = lstat(checked_path, stbuf);
+	//TODO if sdir get recent version
+
+	res = lstat(path, stbuf);
 	if (res == -1) {
-		free(checked_path);
 		return -errno;
 	}
 
-	free(checked_path);
 	return 0;
 }
 
@@ -418,40 +413,55 @@ static int studentfs_fgetattr(const char *path, struct stat *stbuf,
 static int studentfs_access(const char *path, int mask)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
-	
-	res = access(checked_path, mask);
+
+	if (is_sdir_ftype(path)) {
+		printf("got here %s\n", path);
+		exit(0);
+		char base_cp[PATH_MAX];
+		strcpy(base_cp, path);
+		char *base = basename(base_cp);
+		char dir_cp[PATH_MAX];
+		strcpy(dir_cp, path);
+		char *dir = basename(dir_cp);
+		
+		if (base_cp[0] != '.'){
+			char new_path[PATH_MAX];
+			strcpy(new_path, dir);
+			strcat(new_path, "/.");
+			strcat(new_path, base);
+			res = access(new_path, mask);
+		}
+	} else {
+		res = access(path, mask);
+	}
+
 	if (res == -1)
 		return -errno;
 
-	free(checked_path);
 	return 0;
 }
 
 static int studentfs_readlink(const char *path, char *buf, size_t size)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
 	
-	res = readlink(checked_path, buf, size - 1);
+	res = readlink(path, buf, size - 1);
 	if (res == -1)
 		return -errno;
 
 	buf[res] = '\0';
-	free(checked_path);
 	return 0;
 }
 
 static int studentfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
 	
 	struct studentfs_dirp *d = malloc(sizeof(struct studentfs_dirp));
 	if (d == NULL)
 		return -ENOMEM;
 
-	d->dp = opendir(checked_path);
+	d->dp = opendir(path);
 	if (d->dp == NULL) {
 		res = -errno;
 		free(d);
@@ -516,15 +526,13 @@ static int studentfs_releasedir(const char *path, struct fuse_file_info *fi)
 static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
 	
 	if (S_ISFIFO(mode))
-		res = mkfifo(checked_path, mode);
+		res = mkfifo(path, mode);
 	else
-		res = mknod(checked_path, mode, rdev);
+		res = mknod(path, mode, rdev);
 	if (res == -1)
 		return -errno;
-	free(checked_path);
 	return 0;
 }
 
@@ -587,26 +595,11 @@ static int studentfs_mkdir(const char *path, mode_t mode)
 	// if (is_snap(path)) {
 	// 	snap(path);
 	// }
-	#ifdef DEBUG
 	printf("in mkdir\n");
 	printf("path is %s", path);
 	printf("string being compared is %s", path+strlen(path)-strlen(SDIR_FILETYPE));
-	#endif
-	int res;
 	
-	if (is_sdir_ftype(path)) {
-		char *checked_path = remove_SDIR_ftype(path);
-		#ifdef DEBUG
-		printf("DEBUG: MAKING SDIR for path %s \n", checked_path);
-		#endif
-		res = mk_sdir(checked_path);
-		free(checked_path);
-		if (res < 0) {
-			return -errno;
-		}
-		return 0;
-	}
-	res = mkdir(path, mode);
+	int res = mkdir(path, mode);
 	if (res == -1) 
 		return -errno;	
 	return 0;
@@ -615,10 +608,8 @@ static int studentfs_mkdir(const char *path, mode_t mode)
 static int studentfs_unlink(const char *path)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
 	
-	res = unlink(checked_path);
-	free(checked_path);
+	res = unlink(path);
 	if (res == -1)
 		return -errno;
 
@@ -628,10 +619,8 @@ static int studentfs_unlink(const char *path)
 static int studentfs_rmdir(const char *path)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
 	
-	res = rmdir(checked_path);
-	free(checked_path);
+	res = rmdir(path);
 	if (res == -1) {
 		return -errno;
 	}
@@ -674,10 +663,8 @@ static int studentfs_link(const char *from, const char *to)
 
 static int studentfs_chmod(const char *path, mode_t mode)
 {
-	char *checked_path = remove_SDIR_ftype(path);	
 	int res;
-	res = chmod(checked_path, mode);
-	free(checked_path);
+	res = chmod(path, mode);
 	if (res == -1)
 		return -errno;
 
@@ -687,10 +674,9 @@ static int studentfs_chmod(const char *path, mode_t mode)
 static int studentfs_chown(const char *path, uid_t uid, gid_t gid)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
 	
-	res = lchown(checked_path, uid, gid);
-	free(checked_path);
+	res = lchown(path, uid, gid);
+	free(path);
 	if (res == -1)
 		return -errno;
 
@@ -700,10 +686,8 @@ static int studentfs_chown(const char *path, uid_t uid, gid_t gid)
 static int studentfs_truncate(const char *path, off_t size)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
 	
-	res = truncate(checked_path, size);
-	free(checked_path);
+	res = truncate(path, size);
 	if (res == -1)
 		return -errno;
 
@@ -727,13 +711,9 @@ static int studentfs_ftruncate(const char *path, off_t size,
 static int studentfs_utimens(const char *path, const struct timespec ts[2])
 {
 	int res;
-	char checked_path[PATH_MAX];
-	strcpy(checked_path, path);
-	if (is_sdir_ftype(path)) {
-		
-	}
+	printf("path is in utimens %s", path);
 	/* don't use utime/utimes since they follow symlinks */
-	res = utimensat(0, checked_path, ts, AT_SYMLINK_NOFOLLOW);
+	res = utimensat(0, path, ts, AT_SYMLINK_NOFOLLOW);
 	if (res == -1)
 		return -errno;
 
@@ -1115,10 +1095,8 @@ static int studentfs_write_buf(const char *path, struct fuse_bufvec *buf,
 static int studentfs_statfs(const char *path, struct statvfs *stbuf)
 {
 	int res;
-	char *checked_path = remove_SDIR_ftype(path);
 	
-	res = statvfs(checked_path, stbuf);
-	free(checked_path);
+	res = statvfs(path, stbuf);
 	if (res == -1)
 		return -errno;
 
@@ -1175,9 +1153,7 @@ static int studentfs_fsync(const char *path, int isdatasync,
 
 static int studentfs_listxattr(const char *path, char *list, size_t size)
 {
-	char *checked_path = remove_SDIR_ftype(path);	
 	int res = llistxattr(path, list, size);
-	free(checked_path);
 
 	if (res == -1)
 		return -errno;
@@ -1186,9 +1162,7 @@ static int studentfs_listxattr(const char *path, char *list, size_t size)
 
 static int studentfs_removexattr(const char *path, const char *name)
 {
-	char *checked_path = remove_SDIR_ftype(path);	
 	int res = lremovexattr(path, name);
-	free(checked_path);
 	
 	if (res == -1)
 		return -errno;
