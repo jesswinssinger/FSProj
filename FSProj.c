@@ -84,15 +84,13 @@ char *get_metadata_path(const char *path){
 
 char *get_curr_file_path(const char *path) {
 	char *meta_path = get_metadata_path(path);
-	printf("metapath is %s\n", meta_path);
 	FILE *meta_f = fopen(meta_path, "rb+");
 	char vnum[MAX_VNUM_LEN];
 	int sz = fread(vnum, 1, MAX_VNUM_LEN, meta_f);
 	if (sz < 0) {
 		printf("Error reading from metadata %d\n", errno);
-		return sz;
 		// Fuck the user!
-		// exit(0);
+		exit(0);
 	}
 	fclose(meta_f);
 	free(meta_path);
@@ -170,7 +168,7 @@ int ver_changes(char *path, char *buf) {
 	return something;*/
 }
 
-char *_get_next_vnum(const char *path, char *vnum) {
+char *_get_next_ver(const char *path, char *vnum) {
 	// Get the first part of the string, and the last number as a series of tokens
 	char *final_token  = malloc(MAX_VNUM_LEN);
 	char *tokens[MAX_VNUM_LEN];
@@ -194,10 +192,10 @@ char *_get_next_vnum(const char *path, char *vnum) {
 	vnum_branch[0] = '\0';
 	for(int i = 0; i < token_i; i++) {
 		strcat(vnum_branch, tokens[i]);
+		strcat(vnum_branch, ".");
 	}
 
 	// Make the sdir be a directory
-	chmod(path, DIR_PERMS);
 	int final_num = atoi(final_token);
 	char *final_path = malloc(MAX_VNUM_LEN);
 	char *final_num_str = malloc(MAX_VNUM_LEN);
@@ -207,7 +205,7 @@ char *_get_next_vnum(const char *path, char *vnum) {
 	strcpy(final_path, path);
 	strcat(final_path, "/");
 	strcat(final_path, vnum_branch);
-	strcat(final_path, (const char *) final_num_str);
+	strcat(final_path, final_num_str);
 
 	// If there is already a child of the current directory, make a new branch (see Wiki research if this is confusing)
 	if (access(final_path, F_OK) != -1) {
@@ -233,7 +231,7 @@ char *_get_next_vnum(const char *path, char *vnum) {
 	return final_path;
 }
 
-char *get_next_vnum(const char *path) {
+char *get_next_ver(const char *path) {
 	char *curr_vnum = malloc(MAX_VNUM_LEN);
 
 	// File does not exist, so don't bother looking in the sdir.
@@ -241,124 +239,16 @@ char *get_next_vnum(const char *path) {
 		return "1";
 	}
 
-	int res = getxattr(path, CURR_VNUM, curr_vnum, MAX_VNUM_LEN);
+	char *meta_path = get_metadata_path(path);
+	int fd = open(meta_path, O_RDONLY);
+	int res = read(fd, curr_vnum, MAX_VNUM_LEN);
+
 	if (res < 0) {
-		printf("Error getting xattr %s, error is presumably that the wrong file was passed\n", CURR_VNUM);
+		printf("Error reading current vnum from metadata\n");
 		exit(0);
 	}
 	
-	return _get_next_vnum(path, curr_vnum);
-}
-
-/* Create the file described by filename in the path to the sdir (path). 
- * 
- * Arguments:
- * path: path to sdir
- * filename: filename within the sdir located at path
- * buf: file contents to be written to the file at filename
- * fsize: number of bytes to write from buf.
- * 
- * Return val: negative numbers if any system (or wrapper calls) return negative numbers.
- * 
- */
-int create_sdir_file(char *path, char *filename, char *buf, long fsize) {
-	int res = 0;
-		
-	// Construct path to filename.
-	char *sdir_file_path = malloc(strlen(path)+MAX_VNUM_LEN);
-	strcpy(sdir_file_path, path);
-	strcat(sdir_file_path, "/");
-	strcat(sdir_file_path, filename);
-
-	// Write to the file at the path.
-	int fd = open(sdir_file_path, O_RDWR | O_CREAT | O_TRUNC, S_IRWXU | 0755);
-	if (fd < 0) {
-		return fd;
-	}
-	if (fsize > 0) {
-		res |= write(fd, buf, fsize);
-		if (res < 0) {
-			return res;
-		}
-	}
-	res |= close(fd);
-
-	free(sdir_file_path);
-	return res;
-}
-
-/* 
- * make the SDIR if it does not already exist.
- * If it does exist, return -1.
- * If there is a corresponding file, copy all the information into the snapshot "1"
- * otherwise, just create the directory and a blank file titled "1". 
- */
-int mk_sdir(char *path) {
-	long fsize = 0;
-	char *buf = malloc(1024);
-	int res;
-	/* if there is a file, copy the contents into the buffer */
-	
-	if (access(path, F_OK) != -1) {
-		FILE *f = fopen(path, "rb");
-		fseek(f, 0, SEEK_END);
-		fsize = ftell(f);
-		fseek(f, 0, SEEK_SET);
-		buf = realloc(buf, fsize+1);
-		res = fread(buf, fsize, sizeof(char), f);
-		if (res < 0) {
-			printf("failed to read from file before creating sdir\n");
-			return res;
-		}
-		fclose(f);
-
-		int remove_res = remove(path);
-		printf("remove_res is %d\n", remove_res);
-		int unlink_res = unlink(path);
-		printf("unlink res is %d\n", unlink_res);
-	}
-	/* Make the SDIR */
-	res = mkdir(path, S_IFDIR | 0755);
-	if (res < 0) {
-		printf("failed to make SDIR directory\n");
-		return res;
-	}
-	char *dest = malloc(strlen(path)+10);
-	strcpy(dest, path);
-	strcat(dest, "/1");
-
-	res = open(dest, O_CREAT | O_RDWR | O_TRUNC, 0755);
-	// Create the sdir file
-	//res = create_sdir_file(path, "1", buf, fsize);
-	if (res < 0) {
-		return res;
-	}
-	free(buf);
-	printf("after create sdir file\n");
-	
-	// Set the current vnum to be the first file
-	char *ver_no = "1";
-	char value[strlen(SDIR_XATTR)+1];
-	res = getxattr(path, SDIR_XATTR, value, strlen(SDIR_XATTR));
-
-	res |= studentfs_setxattr(path, SDIR_XATTR, SDIR_XATTR, strlen(SDIR_XATTR), XATTR_CREATE);
-	printf("error is %d\n", errno);
-	res |= studentfs_getxattr(path, SDIR_XATTR, value, strlen(SDIR_XATTR));
-	printf("second error is %d\n", errno);
-	printf("xattr is %s\n", value);
-	printf("res is %d\n", res);
-	exit(0);
-	res |= setxattr(path, CURR_VNUM, ver_no, strlen(ver_no), 0);
-	if (res < 0) {
-		return res;
-	}
-	printf("after setxattr\n");
-
-	if (res < 0) {
-		return res;
-	}
-	
-	return 0;
+	return _get_next_ver(get_sdir_path(path), curr_vnum);
 }
 
 /* FUSE methods */
@@ -525,69 +415,53 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	return 0;
 }
 
-// static int snap(const char *path)
-// {
-// 	int res;
-// 	/* Get base filename and sdir path. */
-// 	char* base = malloc(MAX_VNUM_LEN);
-// 	char* sdir_path = malloc(PATH_MAX);
-// 	strcpy(base, path);
-// 	strcpy(sdir_path, path);
-// 	base = memcpy(base, basename((char *) base), strlen(base) - 4); // Remove .VER
-// 	sdir_path = dirname((char *) sdir_path);
+static int snap(const char *path)
+{
+ 	int res;
+ 	/* Get base filename and sdir path. */
+	int old_fd = get_sdir_file_fd(path);
+	off_t old_sz = lseek(old_fd, 0, SEEK_END);
+	
+	char old_buf[old_sz]; 
+	char *next_path = get_next_ver(path);
+	
+	res = read(old_fd, old_buf, old_sz);
+	if (res < 0) {
+		printf("Error while making snapshot %d\n", errno);
+		return res;
+	}
 
-// 	/* BASED ON VERSIONING VS CHECKPOINTING DISCREP (SEE SNAP.SH)
-// 	// Parse new filename and optional msg from base
-// 	char* new_fname = strtok(base, ';');
-// 	char* msg = strtok(NULL, ';');
-// 	*/
+	printf("next path is %s\n", next_path);
+	exit(0);
+	int new_fd = open(next_path, O_CREAT | O_WRONLY, S_IRWXU);
+	res = write(new_fd, old_buf, old_sz);
+	if (res < 0) {
+		printf("Error while making snapshot %d\n", errno);
+		return res;
+	}
 
-// 	/* If there is a message, add it to current version. */
-// 	if (base != NULL) {
-// 		char* curr_ver;
-// 		res = getxattr(sdir_path, CURR_VNUM, curr_ver, MAX_VNUM_LEN);
-// 		if (res < 0) {
-// 			#ifdef DEBUG
-// 			printf("DEBUG: SDIR DOES NOT EXIST.\n");
-// 			#endif
+	close(old_fd);
+	close(new_fd);
 
-// 			mk_sdir(sdir_path);
-// 			return res;
-// 		}
+	char *meta_path = get_metadata_path(path);
+	int meta_fd = open(meta_path, O_TRUNC | O_WRONLY);
 
-// 		// Get path to current version
-// 		char* curr_ver_path;
-// 		strcpy(curr_ver_path, sdir_path);
-// 		curr_ver_path = strcat(curr_ver_path, "/");
-// 		curr_ver_path = strcat(curr_ver_path, curr_ver);
+	next_path = basename(next_path);
+	res = write(meta_fd, next_path, strlen(next_path)+1);
+	if (res < 0) {
+		printf("Error while making snapshot %d\n", errno);
+		return res;
+	}
 
-// 		setxattr(curr_ver_path, "msg", base, MAX_VMSG_LEN, 0);
-// 		// TODO: SHOULD FILENAME BE VNUM? ALL FILES CONTAIN IT IN XATTR.
-// 		// SWITCH THIS TO EITHER CHECKING CURR_VER (WHICH SHOULD BE A NAME)
-// 		// OR LOOKING FOR HIDDEN FILES. (see snap.sh)
-
-// 		printf("Message added to old version: %s\n", base);
-// 	}
-
-// 	/* Create a new version with the contents of the current version. 
-// 	   (CURR_VER should be updated in get_next_vnum method) */
-// 	char* new_ver_path = get_next_vnum(sdir_path);
-
-// 	//TODO: CALL CP COMMAND IN UNIX
-// 	printf("New snapfile created.\n");
-// 	return 0;
-// }
+ 	return res;
+}
 
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
 	//TODO: Do we need to check if it has an sdir already?
 	// if (is_snap(path)) {
 	// 	snap(path);
-	// }
-	printf("in mkdir\n");
-	printf("path is %s", path);
-	printf("string being compared is %s", path+strlen(path)-strlen(SDIR_FILETYPE));
-	
+	// }	
 	int res = mkdir(path, mode);
 	if (res == -1) 
 		return -errno;	
@@ -911,9 +785,12 @@ static int studentfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 static int studentfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
-	int res;
-	
+	int res = 0;
+	printf("is it an sdir? %d\n", is_sdir(path));
+	exit(0);
 	if (is_sdir(path)) {
+		printf("inside is_sdir\n");
+		//snap(path);
 		int fd = get_sdir_file_fd(path);
 		res = pwrite(fd, buf, size, offset);
 		close(fd);
@@ -951,7 +828,7 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 // 		}
 //		
 // 		/* Construct path to new file -- May be deleted after diffing files */
-// 		char *next_vnum = get_next_vnum(path);
+// 		char *next_vnum = get_next_ver(path);
 // 		char *next_ver_path = malloc(MAX_VNUM_LEN*2);
 // 		strcpy(next_ver_path, path);
 // 		strcat(next_ver_path, "/");
@@ -1004,7 +881,7 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 // 			 * Write two files if there were previous changes and the new changes on top
 // 			 * of the old changes will go over the size of the maximum number of changes. 
 // 			 */
-// 			char *next_next_vnum = _get_next_vnum(path, next_vnum);
+// 			char *next_next_vnum = _get_next_ver(path, next_vnum);
 // 			char *next_next_path = malloc(2*MAX_VNUM_LEN);
 // 			strcpy(next_next_path, path);
 // 			strcat(next_next_path, "/");
