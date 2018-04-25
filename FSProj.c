@@ -100,6 +100,7 @@ char *get_curr_file_path(const char *path) {
 	strcat(hidden_path, vnum);
 	return hidden_path;
 }
+
 int get_sdir_file_fd(const char *path) {
 	char *hidden_path = get_curr_file_path(path);
 	int fd = open(hidden_path, O_RDWR);
@@ -786,10 +787,7 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	int res = 0;
-	printf("is it an sdir? %d\n", is_sdir(path));
-	exit(0);
 	if (is_sdir(path)) {
-		printf("inside is_sdir\n");
 		//snap(path);
 		int fd = get_sdir_file_fd(path);
 		res = pwrite(fd, buf, size, offset);
