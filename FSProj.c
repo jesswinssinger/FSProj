@@ -689,7 +689,8 @@ static int studentfs_read(const char *path, char *buf, size_t size, off_t offset
 		    struct fuse_file_info *fi)
 {
 	int res;
-
+	printf("in read\n");
+	exit(0);
 	if (is_sdir(path)) {
 		int fd = get_sdir_file_fd(path);
 		res = pread(fd, buf, size, offset);
@@ -787,6 +788,8 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
 	int res = 0;
+	printf("in write\n");
+	exit(0);
 	if (is_sdir(path)) {
 		//snap(path);
 		int fd = get_sdir_file_fd(path);
