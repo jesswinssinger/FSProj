@@ -414,27 +414,25 @@ static int studentfs_access(const char *path, int mask)
 {
 	int res;
 
-	if (is_sdir_ftype(path)) {
-		printf("got here %s\n", path);
-		exit(0);
-		char base_cp[PATH_MAX];
-		strcpy(base_cp, path);
-		char *base = basename(base_cp);
-		char dir_cp[PATH_MAX];
-		strcpy(dir_cp, path);
-		char *dir = basename(dir_cp);
-		
-		if (base_cp[0] != '.'){
-			char new_path[PATH_MAX];
-			strcpy(new_path, dir);
-			strcat(new_path, "/.");
-			strcat(new_path, base);
-			res = access(new_path, mask);
-		}
-	} else {
-		res = access(path, mask);
-	}
-
+	//if (is_sdir_ftype(path)) {
+	//	char base_cp[PATH_MAX];
+	//	strcpy(base_cp, path);
+	//	char *base = basename(base_cp);
+	//	char dir_cp[PATH_MAX];
+	//	strcpy(dir_cp, path);
+	//	char *dir = basename(dir_cp);
+	//	
+	//	if (base_cp[0] != '.'){
+	//		char new_path[PATH_MAX];
+	//		strcpy(new_path, dir);
+	//		strcat(new_path, "/.");
+	//		strcat(new_path, base);
+	//		res = access(new_path, mask);
+	//	}
+	//} else {
+	//	res = access(path, mask);
+	//}
+	res = access(path, mask);
 	if (res == -1)
 		return -errno;
 
