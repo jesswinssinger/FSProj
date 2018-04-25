@@ -50,6 +50,7 @@ struct studentfs_dirp {
 	off_t offset;
 };
 
+
 /*
  * TODOs:
  * Get Read and Write functionality working.
@@ -57,6 +58,63 @@ struct studentfs_dirp {
  * 
  */ 
 /* Helper methods */
+
+char *get_sdir_path(char *path){
+	char hidden_path[MAX_PATH];
+	strcpy(hidden_path, dirname(path));
+	strcat(hidden_path, "/.");
+	strcat(hidden_path, basename(path));
+	strcat(hidden_path, SDIR_XATTR);
+	return hidden_path;
+}
+
+char *get_metadata_path(char *path){
+	char *hidden_path = get_sdir_path(path);
+	strcat(hidden_path, METADATA_FILENAME);
+	return hidden_path;
+}
+
+char *get_sdir_file_fd(char *path) {
+	char *meta_path = get_metadata_path(path);
+
+	FILE *meta_f = fopen(meta_path, O_RDWR);
+	char *vnum[MAX_VNUM_LEN];
+	int sz = fread(vnum, 1, MAX_VNUM_LEN, meta_f);
+	if (sz < 0) {
+		printf("Error reading from metadata %d\n", errno);
+		return sz;
+	}
+
+	char *hidden_path = get_sdir_path(path);
+	strcat(hidden_path, "/");
+	strcat(hidden_path, vnum);
+	return open(hidden_path, O_RDWR);
+}
+
+int is_sdir(const char *path) {
+	char path_w_sdir[MAX_PATH];
+	char *base = basename(path);
+	char *dir = dirname(path);
+
+	strcpy(path_w_sdir, dir);
+	strcat(path_w_sdir, "/.");
+	strcat(path_w_sdir, base);
+	strcat(path_w_sdir, SDIR_FILETYPE);
+
+	return access(path_w_sdir, F_OK) != -1;
+}
+
+char *remove_SDIR_ftype(const char *path) {
+	char *sdir_path = malloc(strlen(path)+1);
+	if (!is_sdir_ftype(path)) {
+		strcpy(sdir_path, path);
+		return sdir_path;
+	}
+	strcpy(sdir_path, path);
+	sdir_path[strlen(path)-strlen(SDIR_FILETYPE)] = '\0';
+	return sdir_path;
+}
+
 // TODO: Write this
 /* Version changes gets the number of changes bytewise made to a file
  * at a file descriptor.
@@ -206,6 +264,31 @@ int create_sdir_file(char *path, char *filename, char *buf, long fsize) {
 	return res;
 }
 
+static int studentfs_setxattr(const char *path, const char *name, const char *value,
+	size_t size, int flags)
+{
+char *checked_path = remove_SDIR_ftype(path);	
+int res = lsetxattr(checked_path, name, value, size, flags);
+printf("checked_path is %s\n", checked_path);
+
+free(checked_path);
+if (res == -1)
+return -errno;
+return 0;
+}
+
+
+static int studentfs_getxattr(const char *path, const char *name, char *value,
+	size_t size)
+{
+char *checked_path = remove_SDIR_ftype(path);	
+int res = lgetxattr(checked_path, name, value, size);
+
+if (res == -1)
+return -errno;
+return res;
+}
+
 /* 
  * make the SDIR if it does not already exist.
  * If it does exist, return -1.
@@ -257,11 +340,16 @@ int mk_sdir(char *path) {
 	
 	// Set the current vnum to be the first file
 	char *ver_no = "1";
-	res |= setxattr(path, SDIR_XATTR, SDIR_XATTR, strlen(SDIR_XATTR)+1, 0);
+	char value[strlen(SDIR_XATTR)+1];
+	res = getxattr(path, SDIR_XATTR, value, strlen(SDIR_XATTR));
+
+	res |= studentfs_setxattr(path, SDIR_XATTR, SDIR_XATTR, strlen(SDIR_XATTR), XATTR_CREATE);
+	printf("error is %d\n", errno);
+	res |= studentfs_getxattr(path, SDIR_XATTR, value, strlen(SDIR_XATTR));
+	printf("second error is %d\n", errno);
+	printf("xattr is %s\n", value);
 	printf("res is %d\n", res);
-	if (!strcmp("/home/evan/xaf", path)) {
-		exit(0);
-	}
+	exit(0);
 	res |= setxattr(path, CURR_VNUM, ver_no, strlen(ver_no), 0);
 	if (res < 0) {
 		return res;
@@ -275,25 +363,10 @@ int mk_sdir(char *path) {
 	return 0;
 }
 
-int is_sdir(const char *path) {
-	char value[strlen(SDIR_XATTR)+1];
-	int res = getxattr(path, SDIR_XATTR, value, strlen(SDIR_XATTR)+1);
-	printf("value is %s\n", value);
-	return !strcmp(value, SDIR_XATTR);
-}
-
-char *remove_SDIR_ftype(const char *path) {
-	char *sdir_path = malloc(strlen(path)+1);
-	if (!is_sdir_ftype(path)) {
-		strcpy(sdir_path, path);
-		return sdir_path;
-	}
-	strcpy(sdir_path, path);
-	sdir_path[strlen(path)-strlen(SDIR_FILETYPE)] = '\0';
-	return sdir_path;
-}
-
 /* FUSE methods */
+
+
+
 static int studentfs_getattr(const char *path, struct stat *stbuf)
 {
 	char *checked_path = remove_SDIR_ftype(path);
@@ -305,7 +378,6 @@ static int studentfs_getattr(const char *path, struct stat *stbuf)
 		return -errno;
 	}
 
-	printf("path %s is_sdir %d\n", path, is_sdir(checked_path));
 	if (is_sdir(checked_path)) {
 		printf("inside is_sdir\n");
 		stbuf->st_mode = S_IFREG | S_IRWXU | 0755;
@@ -655,6 +727,78 @@ static int studentfs_utimens(const char *path, const struct timespec ts[2])
 }
 #endif
 
+static int studentfs_open(const char *path, struct fuse_file_info *fi) {
+	int fd = -1;
+	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
+	int res; 
+
+	char *path_w_sdir[MAX_PATH];
+	strcpy(path_w_sdir, path);
+	strcat(path_w_sdir, SDIR_FILETYPE);
+	
+	if (create_flag && is_sdir_ftype(path)) {
+		// Create a hidden directory
+		char *base = basename(path);
+		char *dir  = dirname(path);
+		char hidden_path[MAX_PATH];
+		strcpy(hidden_path, dir);
+		strcat(hidden_path, "/");
+		strcat(hidden_path, ".");
+		strcat(hidden_path, base);
+
+		res |= mkdir(hidden_path, S_IRWXU | 0755);
+		
+		// Create a file in the SDIR directory
+		char *hidden_file_name[MAX_PATH];
+		strcpy(hidden_file_name, hidden_path);
+		strcat(hidden_file_name, "/1");
+		fd |= creat(hidden_file_name, S_IRWXU | 0755);
+
+		// Create a file with information on the SDir.
+		char *metadata_file[MAX_PATH];
+		strcpy(metadata_file, hidden_path);
+		strcpy(METADATA_FILENAME);
+		int meta_fd = creat(metadata_file, S_IRWXU | 0755);
+		if (meta_fd < 0) {
+			printf("trouble making the metadata file %d\n", errno);
+			return meta_fd;
+		}
+		res |= write(meta_fd, "1", 2);
+		res |= close(meta_fd);
+		if (res < 0) {
+			printf("error writing metadata\n");
+			return res;
+		}
+
+		// Create the corresponding file
+		char *path_wo_sdir = remove_SDIR_ftype(path);
+		
+		res |= creat(path_wo_sdir, 0755 | S_IRWXU);
+		if (res < 0) {
+			printf("error making sdir \n");
+			return res;
+		}
+		free(path_wo_sdir);
+	} else if (is_sdir(path) && access(path, F_OK) != -1) {
+		// An SDIR exists, open a path to the current file
+		fd = get_sdir_file_fd(path);
+		if (fd < 0) {
+			printf("Couldn't open hidden file, errno: %d\n", errno);
+			return fd;
+		}
+	} else {
+		// Open a normal file as usual.
+		if (create_flag) {
+			fd = open(path, fi->flags, S_IRWXU | 0755);
+		} else {
+			fd = open(path, fi->flags);
+		}
+		if (fd == -1)
+			return -errno;
+	}
+	fi->fh = fd;
+	return 0;
+}
 static int studentfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int fd = -1;
@@ -1061,27 +1205,7 @@ static int studentfs_fsync(const char *path, int isdatasync,
 }
 
 /* xattr operations are optional and can safely be left unimplemented */
-static int studentfs_setxattr(const char *path, const char *name, const char *value,
-			size_t size, int flags)
-{
-	char *checked_path = remove_SDIR_ftype(path);	
-	int res = lsetxattr(path, name, value, size, flags);
-	free(checked_path);
-	if (res == -1)
-		return -errno;
-	return 0;
-}
 
-static int studentfs_getxattr(const char *path, const char *name, char *value,
-			size_t size)
-{
-	char *checked_path = remove_SDIR_ftype(path);	
-	int res = lgetxattr(checked_path, name, value, size);
-
-	if (res == -1)
-		return -errno;
-	return res;
-}
 
 static int studentfs_listxattr(const char *path, char *list, size_t size)
 {
@@ -1107,7 +1231,7 @@ static int studentfs_removexattr(const char *path, const char *name)
 
 void *
 studentfs_init(struct fuse_conn_info *conn)
-{
+{	
 	/* Make aliases for bashscripts */
 	int res = system("chmod u+x scripts/cmdscripts.sh");
 	printf("result of chmod: %d\n", res);

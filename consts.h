@@ -10,3 +10,8 @@
 #define DIR_PERMS 0755 | S_IFDIR
 #define REG_PERMS 0755 | S_IRWXU
 #define MAX_NO_CHANGES 50
+
+
+
+// NEW STUFF
+#define METADATA_FILENAME "/metadata"
