@@ -52,7 +52,12 @@ struct studentfs_dirp {
 
 /*
  * TODO:
- * Get Read and Write functionality working.
+ * Test open
+ * Test mk_sdir
+ * Test read/write
+ * Test snap command
+ * Test switch command
+ * REFACTOR: Move snap, switch, mk_sdir to separate file
  * Make sdirs appear as files in call to getattr.
  */
 
@@ -495,6 +500,52 @@ static int snap(const char *path)
 	return 0;
 }
 
+static int switch(const char* path)
+{
+	char* base = malloc(MAX_VNUM_LEN);
+	char* sdir_path = malloc(PATH_MAX);
+
+	// Get base
+	strcpy(base, path);
+	base = memcpy(base, basename(base), strlen(base) - 4); // Remove .SWI
+
+	// Get directory path
+	strcpy(sdir_path, path);
+	sdir_path = dirname(sdir_path);
+
+	// Parse new curr_vnum and optional msg from base
+	char* new_curr_vnum = strtok(base, ';');
+	char* msg = strtok(NULL, ';');
+
+	return _switch(sdir_path, new_curr_vnum, msg);
+}
+
+/* Switch current version number based on user command
+ */
+static int _switch(const char* sdir_path, const char *new_curr_vnum,
+	const char *msg)
+{
+	int res;
+	//TODO: this relies on get_next_vnum working properly, i.e. branching
+	// correctly from this vnum for future edits (if we care about that)...
+	char* old_verr_path = malloc(PATH_MAX);
+	char* old_verr_num = malloc(MAX_VNUM_LEN);
+
+	res = getxattr(sdir_path, CURR_VNUM, old_verr_num, sizeof(MAX_VNUM_LEN));
+	if (res < 0)
+		return res;
+
+	res = strcpy(old_verr_path, sdir_path);
+	res |= strcat(old_verr_path, old_verr_num);
+	if (res < 0)
+		return res;
+
+	res = setxattr(old_verr_path, MSG_XATTR, msg, sizeof(MAX_VMSG_LEN));
+	free(old_verr_path);
+	free(old_verr_num);
+	return setxattr(sdir_path, CURR_VNUM, new_curr_vnum, sizeof(MAX_VNUM_LEN));
+}
+
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
 	//TODO: Do we need to check if it has an sdir already?
@@ -529,6 +580,7 @@ static int studentfs_mkdir(const char *path, mode_t mode)
 	res = mkdir(path, mode);
 	if (res == -1)
 		return -errno;
+
 	return 0;
 }
 

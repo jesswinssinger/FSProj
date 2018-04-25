@@ -1,4 +1,5 @@
 #define CURR_VNUM "CURR_VNUM"
+#define MSG_XATTR "MSG"
 #define MAX_VNUM_LEN 1024
 #define MAX_VMSG_LEN 50
 #define SDIR_XATTR "SDIR_XATTR"
