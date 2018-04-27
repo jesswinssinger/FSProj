@@ -42,13 +42,7 @@
 /* Project header files */
 #include "consts.h"
 #include "macros.h"
-
-/* Important structs */
-struct studentfs_dirp {
-	DIR *dp;
-	struct dirent *entry;
-	off_t offset;
-};
+#include "structs.h"
 
 /* Helper methods */
 char *get_sdir_path(const char *path){
