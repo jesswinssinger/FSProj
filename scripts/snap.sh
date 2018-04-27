@@ -9,8 +9,8 @@
 # fi
 
 
-# snap [optional msg]
+# snap [fname]
 # I guess for now all this does is provide a manual
 # option to create another snap. We can decide later whether manual
 # ones can be given names like the github branch scheme.
-mkdir "$1.VER"
+printf '' > "$1.SNA"
