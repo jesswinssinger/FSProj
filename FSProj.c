@@ -334,7 +334,7 @@ char *_get_next_ver(const char *path, char *vnum) {
 		strcat(final_path, final_token);
 		strcat(final_path, ".1");
 		while (access(final_path, F_OK) != -1) {
-			final_path[strlen(final_path)-1] = '\0';
+			final_path[strlen(final_path)-1] = '0';
 			strcat(final_path, ".1");
 		}
 	}
