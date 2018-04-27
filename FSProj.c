@@ -46,54 +46,60 @@
 
 /* Helper methods */
 char *get_sdir_path(const char *path){
-	char *hidden_path = malloc(PATH_MAX+1);
+	char *sdir_path = malloc(PATH_MAX+1);
 	char *base_cp = malloc(PATH_MAX+1);
-	strcpy(base_cp, path);
 	char *dir_cp = malloc(PATH_MAX+1);
+	strcpy(base_cp, path);
 	strcpy(dir_cp, path);
 
 	base_cp = basename(base_cp);
 	dir_cp  = dirname(dir_cp);
 
-	strcpy(hidden_path, dir_cp);
-	strcat(hidden_path, "/.");
-	strcat(hidden_path, base_cp);
-	strcat(hidden_path, SDIR_FILETYPE);
-	return hidden_path;
+	strcpy(sdir_path, dir_cp);
+	strcat(sdir_path, "/.");
+	strcat(sdir_path, base_cp);
+	strcat(sdir_path, SDIR_FILETYPE);
+	return sdir_path;
 }
 
 char *get_metadata_path(const char *path){
-	char *hidden_path = get_sdir_path(path);
-	strcat(hidden_path, METADATA_FILENAME);
-	return hidden_path;
+	char *meta_path = get_sdir_path(path);
+	strcat(meta_path, METADATA_FILENAME);
+	return meta_path;
 }
 
-char *get_curr_file_path(const char *path) {
+char *get_curr_verr_path(const char *path) {
+	/* Get current vnum from sdir's metadata. */
 	char *meta_path = get_metadata_path(path);
 	FILE *meta_f = fopen(meta_path, "rb+");
+
 	char vnum[MAX_VNUM_LEN];
 	int sz = fread(vnum, 1, MAX_VNUM_LEN, meta_f);
 	if (sz < 0) {
-		printf("Error reading from metadata %d\n", errno);
-		// Fuck the user!
+		fprintf(stderr, "Error reading from metadata: %d\n", errno);
 		exit(0);
 	}
 	fclose(meta_f);
 	free(meta_path);
 
-	char *hidden_path = get_sdir_path(path);
-	strcat(hidden_path, "/");
-	strcat(hidden_path, vnum);
-	return hidden_path;
+	/* Return current version's path. */
+	char *curr_verr_path = get_sdir_path(path);
+	strcat(curr_verr_path, "/");
+	strcat(curr_verr_path, vnum);
+	return curr_verr_path;
 }
 
+/* Gets file descriptor of the current version and opens the file. */
 int get_sdir_file_fd(const char *path) {
-	char *hidden_path = get_curr_file_path(path);
-	int fd = open(hidden_path, O_RDWR);
-	free(hidden_path);
+	char *curr_verr_path = get_curr_verr_path(path);
+	int fd = open(curr_verr_path, O_RDWR);
+	free(curr_verr_path);
 	return fd;
 }
 
+/* Checks if file whose path is given in the argument is being versioned
+ * (i.e. has an SDIR)
+ */
 int is_sdir(const char *path) {
 	char base_cp[PATH_MAX];
 	strcpy(base_cp, path);
@@ -112,13 +118,16 @@ int is_sdir(const char *path) {
 	return access(path_w_sdir, F_OK) != -1;
 }
 
+/* Return path with .SDIR removed from end of basename. */
+//TODO: Shouldn't this also remove the "." that makes it hidden?
 char *remove_SDIR_ftype(const char *path) {
 	char *sdir_path = malloc(strlen(path)+1);
+	strcpy(sdir_path, path);
+
 	if (!is_sdir_ftype(path)) {
-		strcpy(sdir_path, path);
 		return sdir_path;
 	}
-	strcpy(sdir_path, path);
+
 	sdir_path[strlen(path)-strlen(SDIR_FILETYPE)] = '\0';
 	return sdir_path;
 }
@@ -133,26 +142,6 @@ char *remove_SDIR_ftype(const char *path) {
  */
 int ver_changes(char *path, char *buf) {
 	return 0;
-	// Make file readable
-	//TODO : Debug all this
-	/*int res = chmod(path, DIR_PERMS);
-	if (res < 0) {
-		printf("Couldn't change directory permissions in ver_changes\n");
-		return res;
-	}
-
-	char *diff_str = malloc(strlen(buf)+30);
-	char *diff_fmt = "echo %s | diff %s -";
-	sprintf(diff_str, diff_fmt, buf, path);
-
-	FILE *fp;
-	fp = popen(diff_str);
-	printf("fp:\n %s\n", fp);
-	int res = chmod(path, REG_PERMS);
-	if (res < 0) {
-		printf("Couldn't change sdir permissions back to regular in ver_changes\n");
-	}
-	return something;*/
 }
 
 char *_get_next_ver(const char *path, char *vnum) {
@@ -175,39 +164,38 @@ char *_get_next_ver(const char *path, char *vnum) {
 	}
 	strcpy(final_token, tokens[token_i-1]);
 
-	// Build the part of the vnum "branch" before the final delimited number (ie a.b.c.d -> a.b.c.)
+	// Build the part of the vnum "branch" before the final
+	// delimited number (ie a.b.c.d -> a.b.c.)
 	vnum_branch[0] = '\0';
 	for(int i = 0; i < token_i; i++) {
 		strcat(vnum_branch, tokens[i]);
 		strcat(vnum_branch, ".");
 	}
 
-	// Make the sdir be a directory
-	int final_num = atoi(final_token);
-	char *final_path = malloc(MAX_VNUM_LEN);
-	char *final_num_str = malloc(MAX_VNUM_LEN);
-	sprintf(final_num_str, "%d", final_num+1);
-
-	// Increment the current version number by 1.
+	// Set up path with all but final delimited number.
+	char *final_path = malloc(PATH_MAX);
 	strcpy(final_path, path);
 	strcat(final_path, "/");
 	strcat(final_path, vnum_branch);
-	strcat(final_path, final_num_str);
 
-	// If there is already a child of the current directory, make a new branch (see Wiki research if this is confusing)
+	// Calculate final number.
+	char *final_num_str = malloc(MAX_VNUM_LEN);
+
+	// If there is already a child of the current directory,
+	// make a new branch (see Wiki research if this is confusing)
 	if (access(final_path, F_OK) != -1) {
-		strcpy(final_path, path);
-		strcat(final_path, "/");
-		strcat(final_path, vnum_branch);
-		sprintf(final_num_str, "%d", final_num);
-		strcat(final_path, (const char *) final_num_str);
+		strcat(final_path, final_token);
 		strcat(final_path, ".1");
 		while (access(final_path, F_OK) != -1) {
 			final_path[strlen(final_path)-1] = '0';
 			strcat(final_path, ".1");
 		}
 	}
-
+	else { //If not, simply increment the old vnum's final index by 1.
+		int final_num = atoi(final_token);
+		sprintf(final_num_str, "%d", final_num+1);
+		strcat(final_path, final_num_str);
+	}
 	free(final_token);
 	free(res);
 	for (int i = 0; i < MAX_VNUM_LEN; i++) {
@@ -219,16 +207,18 @@ char *_get_next_ver(const char *path, char *vnum) {
 }
 
 char *get_next_ver(const char *path) {
-	char *curr_vnum = malloc(MAX_VNUM_LEN);
+	int res;
 
 	// File does not exist, so don't bother looking in the sdir.
 	if (access(path, F_OK) == -1) {
 		return "1";
 	}
 
+	// Get current vnum from metadata file of SDIR.
+	char *curr_vnum = malloc(MAX_VNUM_LEN);
 	char *meta_path = get_metadata_path(path);
-	int fd = open(meta_path, O_RDONLY);
-	int res = read(fd, curr_vnum, MAX_VNUM_LEN);
+	int mfd = open(meta_path, O_RDONLY);
+	res = read(mfd, curr_vnum, MAX_VNUM_LEN);
 
 	if (res < 0) {
 		printf("Error reading current vnum from metadata\n");
@@ -238,16 +228,106 @@ char *get_next_ver(const char *path) {
 	return _get_next_ver(get_sdir_path(path), curr_vnum);
 }
 
+/* Helper for update_metadata(): deletes oldest sfile in sdir based on
+ * modification time.
+ * Metadata updates are all handled in update_metadata().
+ */
+//TODO: test this!
+static int delete_oldest_sfile(const char* path, int vmax)
+{
+	char *command;
+
+	char *sdir_path = get_sdir_path(path);
+	sprintf(command, "ls %s | sed -e '1, %dd' | xargs -d '\n' rm",
+		sdir_path, vmax);
+
+	return system(command);
+}
+
+/* Increment vcount by 1 and update curr_vnum. If the new vcount is past vmax,
+ * delete oldest checkpoint in the SDIR.
+ */
+static int update_metadata(const char* path, const char* new_curr_vnum)
+{
+	int res;
+
+	/* Get metadata from metadata file. */
+	struct metadata md;
+	char *meta_path = get_metadata_path(path);
+	int meta_fd = open(meta_path, O_TRUNC | O_WRONLY);
+	res = read(meta_fd, &md, sizeof(struct metadata));
+
+	/* Update curr_vnum and vcount (if necessary) */
+	strcpy(md.curr_vnum, new_curr_vnum);
+
+	int vmax_exceeded = (md.vmax != -1) && ((md.vcount + 1) > md.vmax);
+	if (vmax_exceeded) {
+		// # of sfiles exceeds maximum: delete oldest sfile.
+		delete_oldest_sfile(path, md.vmax);
+	}
+	else {
+		md.vcount++;
+	}
+
+	/* Update metadata file with new information. */
+	lseek(meta_fd, 0, SEEK_SET);
+	res = write(meta_fd, &md, sizeof(struct metadata));
+	close(meta_fd);
+
+	return res;
+}
+
+static int snap(const char *path)
+{
+	#ifdef DEBUG
+		printf("In snap for %s\n", path);
+	#endif
+
+ 	int res;
+
+	/* Get size of file being "snapped" */
+	int old_fd = get_sdir_file_fd(path);
+	off_t old_sz = lseek(old_fd, 0, SEEK_END);
+
+	/* Get contents of file being "snapped" */
+	char old_buf[old_sz];
+	res = read(old_fd, &old_buf, old_sz);
+	if (res < 0) {
+		fprintf(stderr, "Error while making snapshot %d\n", errno);
+		return res;
+	}
+
+	/* Create new sfile with same contents */
+	char *next_path = get_next_ver(path);
+
+	#ifdef DEBUG
+	printf("Next path is %s\n", next_path);
+	#endif
+
+	int new_fd = open(next_path, O_CREAT | O_WRONLY, S_IRWXU);
+	res = write(new_fd, old_buf, old_sz);
+	if (res < 0) {
+		printf("Error while making snapshot %d\n", errno);
+		return res;
+	}
+
+	close(old_fd);
+	close(new_fd);
+
+	/* Update metadata's current vnum and vcount. */
+	update_metadata(path, basename(next_path));
+
+ 	return res;
+}
+
 /* FUSE methods */
-
-
-
+//TODO: Test if this happens successfully!
 static int studentfs_getattr(const char *path, struct stat *stbuf)
 {
 	int res;
-	//TODO if sdir get recent version
+
 	if (is_sdir(path)) {
-		char *new_path = get_curr_file_path(path);
+		char *new_path = get_curr_verr_path(path);
 		res = lstat(new_path, stbuf);
 	} else {
 		res = lstat(path, stbuf);
@@ -381,53 +461,8 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 	return 0;
 }
 
-static int snap(const char *path)
-{
- 	int res;
- 	/* Get base filename and sdir path. */
-	int old_fd = get_sdir_file_fd(path);
-	off_t old_sz = lseek(old_fd, 0, SEEK_END);
-
-	char old_buf[old_sz];
-	char *next_path = get_next_ver(path);
-
-	res = read(old_fd, old_buf, old_sz);
-	if (res < 0) {
-		printf("Error while making snapshot %d\n", errno);
-		return res;
-	}
-
-	printf("next path is %s\n", next_path);
-	exit(0);
-	int new_fd = open(next_path, O_CREAT | O_WRONLY, S_IRWXU);
-	res = write(new_fd, old_buf, old_sz);
-	if (res < 0) {
-		printf("Error while making snapshot %d\n", errno);
-		return res;
-	}
-
-	close(old_fd);
-	close(new_fd);
-
-	char *meta_path = get_metadata_path(path);
-	int meta_fd = open(meta_path, O_TRUNC | O_WRONLY);
-
-	next_path = basename(next_path);
-	res = write(meta_fd, next_path, strlen(next_path)+1);
-	if (res < 0) {
-		printf("Error while making snapshot %d\n", errno);
-		return res;
-	}
-
- 	return res;
-}
-
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
-	//TODO: Do we need to check if it has an sdir already?
-	// if (is_snap(path)) {
-	// 	snap(path);
-	// }
 	int res = mkdir(path, mode);
 	if (res == -1)
 		return -errno;
@@ -469,7 +504,6 @@ static int studentfs_symlink(const char *from, const char *to)
 
 static int studentfs_rename(const char *from, const char *to)
 {
-	// TODO: see if this can be of use in cleaning up the code.
 	int res;
 
 	res = rename(from, to);
@@ -548,14 +582,11 @@ static int studentfs_utimens(const char *path, const struct timespec ts[2])
 	return 0;
 }
 
-static int studentfs_open(const char *path, struct fuse_file_info *fi) {
+static int studentfs_open(const char *path, struct fuse_file_info *fi)
+{
 	int fd = -1;
 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
 	int res = 0;
-
-	char path_w_sdir[PATH_MAX];
-	strcpy(path_w_sdir, path);
-	strcat(path_w_sdir, SDIR_FILETYPE);
 
 	if (create_flag && is_sdir_ftype(path)) {
 		char base_cp[PATH_MAX];
@@ -575,26 +606,34 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi) {
 
 		res |= mkdir(hidden_path, S_IRWXU | 0755);
 
-		// Create a file in the SDIR directory
+		// Create first sfile in the SDIR directory
 		char hidden_file_name[PATH_MAX];
 		strcpy(hidden_file_name, hidden_path);
 		strcat(hidden_file_name, "/1");
 		fd = creat(hidden_file_name, S_IRWXU | 0755);
 
-		// Create a file with information on the SDir.
-		char metadata_file[PATH_MAX];
-		strcpy(metadata_file, hidden_path);
-		strcat(metadata_file, METADATA_FILENAME);
-		int meta_fd = creat(metadata_file, S_IRWXU | 0755);
+		// Create SDIR's metadata file
+		char mpath[PATH_MAX];
+		strcpy(mpath, hidden_path);
+		strcat(mpath, METADATA_FILENAME);
+		int meta_fd = creat(mpath, S_IRWXU | 0755);
 		if (meta_fd < 0) {
 			printf("trouble making the metadata file %d\n", errno);
 			return meta_fd;
 		}
 
-		res |= write(meta_fd, "1", 2);
+		// Write metadata to file
+		// TODO: make vmax and size_freq configurable with mkdir
+		struct metadata md;
+			strcpy(md.curr_vnum, "1");
+			md.vcount = 1;
+			md.vmax = -1;
+			md.size_freq = -1;
+		res = open(mpath, O_RDWR);
+		res |= write(meta_fd, &md, sizeof(struct metadata));
 		res |= close(meta_fd);
 		if (res < 0) {
-			printf("error writing metadata\n");
+			fprintf(stderr, "Error writing metadata.\n");
 			return res;
 		}
 
@@ -602,7 +641,7 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi) {
 		char *path_wo_sdir = remove_SDIR_ftype(path);
 		res |= open(path_wo_sdir, O_CREAT | O_RDWR, 0755 | S_IRWXU);
 		if (res < 0) {
-			printf("error making sdir \n");
+			fprintf(stderr, "Error making SDIR's corresponding file.\n");
 			return res;
 		}
 		close(res);
@@ -632,6 +671,7 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi) {
 static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
 	int fd;
+
 	if (is_sdir_ftype(path)) {
 		// For unknown reasons, FUSE sometimes does not route throug our open method
 		// within the mount point AFAWK thus far. Worth investigating more, but this
@@ -642,20 +682,22 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 		return 0;
 	}
 
-	// Otherwise, system call.
 	fd = open(path, fi->flags, mode);
 	if (fd < 0)
 		return -errno;
 	fi->fh = fd;
+
 	return 0;
 }
 
 static int studentfs_read(const char *path, char *buf, size_t size, off_t offset,
 		    struct fuse_file_info *fi)
 {
+	#ifdef DEBUG
+		printf("In read\n");
+	#endif
 	int res;
-	printf("in read\n");
-	exit(0);
+
 	if (is_sdir(path)) {
 		int fd = get_sdir_file_fd(path);
 		res = pread(fd, buf, size, offset);
@@ -693,11 +735,13 @@ static int studentfs_read_buf(const char *path, struct fuse_bufvec **bufp,
 static int studentfs_write(const char *path, const char *buf, size_t size,
 		     off_t offset, struct fuse_file_info *fi)
 {
-	int res = 0;
-	printf("in write\n");
-	exit(0);
+	#ifdef DEBUG
+		printf("In write\n");
+	#endif
+
+	int res;
+
 	if (is_sdir(path)) {
-		//snap(path);
 		int fd = get_sdir_file_fd(path);
 		res = pwrite(fd, buf, size, offset);
 		close(fd);
@@ -824,6 +868,7 @@ void *
 studentfs_init(struct fuse_conn_info *conn)
 {
 	/* Make aliases for bashscripts */
+	//TODO: Update this ...
 	int res = system("chmod u+x scripts/cmdscripts.sh");
 	printf("result of chmod: %d\n", res);
 	res |= system("./scripts/cmdscripts.sh");
