@@ -45,6 +45,10 @@
 #include "structs.h"
 
 /* Helper methods */
+
+/* Returns the SDIR path for a given file path. Does not need to exist
+ * to return successfully.
+ */
 char *get_sdir_path(const char *path){
 	char *sdir_path = malloc(PATH_MAX+1);
 	char *base_cp = malloc(PATH_MAX+1);
@@ -320,6 +324,108 @@ static int snap(const char *path)
  	return res;
 }
 
+static int mk_metadata_file(const char* sdir_path)
+{
+	int res;
+
+	// Create SDIR's metadata file
+	char mpath[PATH_MAX];
+	strcpy(mpath, sdir_path);
+	strcat(mpath, METADATA_FILENAME);
+	int meta_fd = creat(mpath, S_IRWXU | 0755);
+	if (meta_fd < 0) {
+		printf("trouble making the metadata file %d\n", errno);
+		return meta_fd;
+	}
+
+	// Write metadata to file
+	// TODO: make vmax and size_freq configurable with mkdir
+	// (requires revisiting mk_sdir)
+	struct metadata md;
+		strcpy(md.curr_vnum, "1");
+		md.vcount = 1;
+		md.vmax = -1;
+		md.size_freq = -1;
+	res = open(mpath, O_RDWR);
+	res |= write(meta_fd, &md, sizeof(struct metadata));
+	res |= close(meta_fd);
+	if (res < 0) {
+		fprintf(stderr, "Error writing metadata.\n");
+		return res;
+	}
+
+	return 0;
+}
+
+char *get_file_path(const char* sdir_path)
+{
+	char dir_cp[PATH_MAX];
+	char base_cp[PATH_MAX];
+	strcpy(dir_cp, sdir_path);
+	strcpy(base_cp, sdir_path);
+	char dir[PATH_MAX];
+	char base[PATH_MAX];
+	strcpy(dir, dirname((char *) dir_cp));
+	strcpy(base, basename((char *) base_cp));
+
+	char *file_path = malloc(PATH_MAX);
+	strcpy(file_path, dir);
+	strcat(file_path, "/");
+	strcat(file_path, base+1);
+	file_path[strlen(file_path)-strlen(SDIR_FILETYPE)] = '\0';
+
+	return file_path;
+}
+
+static int mk_sdir(const char* path)
+{
+	#ifdef DEBUG
+		printf("In mk_sdir\n");
+	#endif
+	int res;
+
+	// Create an SDIR
+	res = mkdir(path, S_IRWXU | 0755);
+	if (res < 0)
+		return res;
+
+	#ifdef DEBUG
+		printf("	Created SDIR: %s\n", path);
+	#endif
+
+	// Create first sfile in the SDIR directory
+	char sfile_path[PATH_MAX];
+	strcpy(sfile_path, path);
+	strcat(sfile_path, "/1");
+	res = creat(sfile_path, S_IRWXU | 0755);
+	if (res < 0)
+		return res;
+
+	#ifdef DEBUG
+		printf("	Created first sfile: %s\n",sfile_path);
+	#endif
+
+	// Create metadata file
+	mk_metadata_file(path);
+
+	// Create the corresponding file
+	char *file_path = get_file_path(path);
+	res |= open(file_path, O_CREAT | O_RDWR, 0755 | S_IRWXU);
+	if (res < 0) {
+		fprintf(stderr, "Error making SDIR's corresponding file %s.\n", file_path);
+		return res;
+	}
+
+	#ifdef DEBUG
+		printf("Created corresponding file: %s\n", file_path);
+	#endif
+
+	close(res);
+	free(file_path);
+
+	return 0;
+}
+
 /* FUSE methods */
 //TODO: Test if this happens successfully!
 static int studentfs_getattr(const char *path, struct stat *stbuf)
@@ -463,9 +569,17 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
-	int res = mkdir(path, mode);
-	if (res == -1)
-		return -errno;
+	int res;
+
+	if (is_sdir_ftype(path)) {
+		res = mk_sdir(path);
+	}
+	else {
+		res = mkdir(path, mode);
+		if (res == -1)
+			return -errno;
+	}
+
 	return 0;
 }
 
@@ -586,68 +700,8 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 {
 	int fd = -1;
 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
-	int res = 0;
 
-	if (create_flag && is_sdir_ftype(path)) {
-		char base_cp[PATH_MAX];
-		strcpy(base_cp, path);
-		// Create a hidden directory
-		char *base = basename((char *) base_cp);
-
-		char dir_cp[PATH_MAX];
-		strcpy(dir_cp, path);
-		char *dir  = dirname((char *) dir_cp);
-
-		char hidden_path[PATH_MAX];
-		strcpy(hidden_path, dir);
-		strcat(hidden_path, "/");
-		strcat(hidden_path, ".");
-		strcat(hidden_path, base);
-
-		res |= mkdir(hidden_path, S_IRWXU | 0755);
-
-		// Create first sfile in the SDIR directory
-		char hidden_file_name[PATH_MAX];
-		strcpy(hidden_file_name, hidden_path);
-		strcat(hidden_file_name, "/1");
-		fd = creat(hidden_file_name, S_IRWXU | 0755);
-
-		// Create SDIR's metadata file
-		char mpath[PATH_MAX];
-		strcpy(mpath, hidden_path);
-		strcat(mpath, METADATA_FILENAME);
-		int meta_fd = creat(mpath, S_IRWXU | 0755);
-		if (meta_fd < 0) {
-			printf("trouble making the metadata file %d\n", errno);
-			return meta_fd;
-		}
-
-		// Write metadata to file
-		// TODO: make vmax and size_freq configurable with mkdir
-		struct metadata md;
-			strcpy(md.curr_vnum, "1");
-			md.vcount = 1;
-			md.vmax = -1;
-			md.size_freq = -1;
-		res = open(mpath, O_RDWR);
-		res |= write(meta_fd, &md, sizeof(struct metadata));
-		res |= close(meta_fd);
-		if (res < 0) {
-			fprintf(stderr, "Error writing metadata.\n");
-			return res;
-		}
-
-		// Create the corresponding file
-		char *path_wo_sdir = remove_SDIR_ftype(path);
-		res |= open(path_wo_sdir, O_CREAT | O_RDWR, 0755 | S_IRWXU);
-		if (res < 0) {
-			fprintf(stderr, "Error making SDIR's corresponding file.\n");
-			return res;
-		}
-		close(res);
-		free(path_wo_sdir);
-
-	} else if (is_sdir(path) && access(path, F_OK) != -1) {
+	if (is_sdir(path) && access(path, F_OK) != -1) {
 		// An SDIR exists, open a path to the current file
 		fd = get_sdir_file_fd(path);
 		if (fd < 0) {

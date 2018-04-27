@@ -2,5 +2,5 @@
 if [ -e $1 ]; then
     echo "SnapDirectory $1 already exists!"
 else
-    touch "$1.SDIR"
+    mkdir ".$1.SDIR"
 fi
