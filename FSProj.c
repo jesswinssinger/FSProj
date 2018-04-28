@@ -67,8 +67,14 @@ char *get_sdir_path(const char *path){
 }
 
 char *get_metadata_path(const char *path){
+	#ifdef DEBUG
+		printf("Getting metadata path for %s\n", path);
+	#endif
 	char *meta_path = get_sdir_path(path);
 	strcat(meta_path, METADATA_FILENAME);
+	#ifdef DEBUG
+		printf("	Metadata path is %s\n", meta_path);
+	#endif
 	return meta_path;
 }
 
@@ -507,8 +513,8 @@ static int switch_current_version(const char *path)
 
 	char *fname = malloc(PATH_MAX);
 	char *new_vnum = malloc(MAX_VNUM_LEN);
-	fname = strtok(base, ";");
-	new_vnum = strtok(NULL, ";");
+	strcpy(fname, strtok(base, ";"));
+	strcpy(new_vnum, strtok(NULL, ";"));
 
 	#ifdef DEBUG
 		printf("	fname is: %s\n", fname);
@@ -808,10 +814,24 @@ static int studentfs_utimens(const char *path, const struct timespec ts[2])
 
 static int studentfs_open(const char *path, struct fuse_file_info *fi)
 {
+	#ifdef DEBUG
+		printf("In open for %s\n", path);
+	#endif
 	int fd = -1;
 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
 
-	if (is_sdir(path) && access(path, F_OK) != -1) {
+	if (is_snap(path)) {
+		printf("Is snap\n");
+		snap(path);
+		return 0;
+	}
+	else if (is_switch(path)) {
+		printf("Is switch\n");
+		switch_current_version(path);
+		return 0;
+	}
+	else if (is_sdir(path) && access(path, F_OK) != -1) {
+		printf("Is sdir\n");
 		// An SDIR exists, open a path to the current file
 		fd = get_sdir_file_fd(path);
 		if (fd < 0) {
@@ -819,6 +839,7 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 			return fd;
 		}
 	} else {
+		printf("Other stuff\n");
 		// Open a normal file as usual.
 		if (create_flag) {
 			fd = open(path, fi->flags, S_IRWXU | 0755);
@@ -834,22 +855,16 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 
 static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
+	#ifdef DEBUG
+		printf("In create\n");
+	#endif
 	int fd;
 
-	if (is_sdir_ftype(path)) {
+	if (is_sdir_ftype(path) || is_snap(path) || is_switch(path)) {
 		// For unknown reasons, FUSE sometimes does not route throug our open method
 		// within the mount point AFAWK thus far. Worth investigating more, but this
 		// works for the time being.
 		studentfs_open(path, fi);
-		if (fi->fh < 0)
-			return -errno;
-		return 0;
-	}
-
-	if (is_snap(path)) {
-		snap(path);
-	} else if (is_switch(path)) {
-		switch_current_version(path);
 	} else {
 		fd = open(path, fi->flags, mode);
 		if (fd < 0)

@@ -2,4 +2,4 @@
 
 # switch [vnum]
 # switches current working version to vnum
-printf '' > "$1;$2.SWI"
+printf '' > "$1\;$2.SWI"
