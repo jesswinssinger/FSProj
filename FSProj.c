@@ -106,7 +106,7 @@ char *get_curr_verr_path(const char *path) {
 
 	char vnum[MAX_VNUM_LEN];
 	int sz = fread(vnum, 1, MAX_VNUM_LEN, meta_f);
-	if (sz < 0) {
+	if (sz <= 0) {
 		fprintf(stderr, "Error reading from metadata: %d\n", errno);
 		exit(0);
 	}
@@ -551,12 +551,22 @@ static int switch_current_version(const char *path)
 	#endif
 
 	/* Update metadata file. */
+	struct metadata md;
 	char *meta_path = get_metadata_path(fpath);
-	int meta_fd = open(meta_path, O_TRUNC | O_WRONLY);
-	res = write(meta_fd, &new_vnum, MAX_VNUM_LEN);
-	if (res < 0)
-		return res;
-
+	FILE* meta_fp = fopen(meta_path, "rb+");
+	res = fread(&md, sizeof(struct metadata), 1, meta_fp);
+	if (res == 0) {
+		fprintf(stderr, "Trouble reading metadata.\n");
+		return 1;
+	}
+	strcpy(md.curr_vnum, new_vnum);
+	fseek(meta_fp, 0L, SEEK_SET);
+	res = fwrite(&md, sizeof(struct metadata), 1, meta_fp);
+	if (res == 0) {
+		fprintf(stderr, "Trouble updating version number.\n");
+		return 1;
+	}
+	fclose(meta_fp);
 	return 0;
 }
 
@@ -564,26 +574,41 @@ static int switch_current_version(const char *path)
 //TODO: Test if this happens successfully!
 static int studentfs_getattr(const char *path, struct stat *stbuf)
 {
-	#ifdef DEBUG
-		printf("Getting attributes for %s\n", path);
-	#endif
-
 	int res;
+	char *new_path;
 
 	if (is_snap(path)) {
+		printf("In getattr for %s\n", path);
 		char fpath[PATH_MAX];
 		strcpy(fpath, path);
 		fpath[strlen(fpath) + 1 - sizeof(SNAP_SUFFIX)] = '\0';
 		res = lstat(fpath, stbuf);
 	}
 	else if (is_switch(path)) {
-		char fpath[PATH_MAX];
+		printf("In getattr for %s\n", path);
+
+		/* Isolate fname */
+		char *base = malloc(PATH_MAX);
+		strcpy(base, path);
+		base = basename((char*) base);
+		base[strlen(base) + 1 - sizeof(SWITCH_SUFFIX)] = '\0';
+
+		char *fname = malloc(PATH_MAX);
+		char *new_vnum = malloc(MAX_VNUM_LEN);
+		strcpy(fname, strtok(base, ";"));
+		strcpy(new_vnum, strtok(NULL, ";"));
+
+		/* Rebuild filename path. */
+		char *fpath = malloc(PATH_MAX);
 		strcpy(fpath, path);
-		fpath[strlen(fpath) + 1 - sizeof(SWITCH_SUFFIX)] = '\0';
+		fpath = dirname((char*) fpath);
+		strcat(fpath, "/");
+		strcat(fpath, fname);
+		
 		res = lstat(fpath, stbuf);
 	}
 	else if (is_sdir(path)) {
-		char *new_path = get_curr_verr_path(path);
+		new_path = get_curr_verr_path(path);
 		res = lstat(new_path, stbuf);
 	} else {
 		res = lstat(path, stbuf);
