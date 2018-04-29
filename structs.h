@@ -9,6 +9,6 @@ struct metadata {
 	size_t vcount;    // # of checkpoints
 
 	/* For configuring checkpointing. -1 indicates indefinite */
-	int vmax;         // Maximum number of checkpoints
-	int size_freq;    // Checkpointing frequency based on size of change
+	uint32_t vmax;         // Maximum number of checkpoints
+	uint32_t size_freq;    // Checkpointing frequency based on size of change
 };

@@ -174,19 +174,12 @@ char *remove_SDIR_ftype(const char *path) {
 
 static int mk_metadata_file(const char* sdir_path)
 {
+	#ifdef DEBUG
+	printf("Making metadata file\n");
+	#endif
 	int res;
 
-	// Create SDIR's metadata file
-	char mpath[PATH_MAX];
-	strcpy(mpath, sdir_path);
-	strcat(mpath, METADATA_FILENAME);
-	int meta_fd = creat(mpath, S_IRWXU | 0755);
-	if (meta_fd < 0) {
-		printf("trouble making the metadata file %d\n", errno);
-		return meta_fd;
-	}
-
-	// Write metadata to file
+	// Create metadata struct
 	// TODO: make vmax and size_freq configurable with mkdir
 	// (requires revisiting mk_sdir)
 	struct metadata md;
@@ -194,13 +187,20 @@ static int mk_metadata_file(const char* sdir_path)
 		md.vcount = 1;
 		md.vmax = -1;
 		md.size_freq = -1;
-	res = open(mpath, O_RDWR);
-	res |= write(meta_fd, &md, sizeof(struct metadata));
-	res |= close(meta_fd);
-	if (res < 0) {
-		fprintf(stderr, "Error writing metadata.\n");
-		return res;
+
+	// Create path for metadata
+	char mpath[PATH_MAX];
+	strcpy(mpath, sdir_path);
+	strcat(mpath, METADATA_FILENAME);
+
+	// Write metadata to file
+	FILE *meta_fp = fopen(mpath, "wb+");
+	res = fwrite(&md, sizeof(struct metadata), 1, meta_fp);
+	if (res == 0) {
+		fprintf(stderr, "Trouble making metadata file.\n");
+		return -1;
 	}
+	fclose(meta_fp);
 
 	return 0;
 }
@@ -394,13 +394,12 @@ char *get_next_ver(const char *path) {
  * Metadata updates are all handled in update_metadata().
  */
 //TODO: test this!
-static int delete_oldest_sfile(const char* path, int vmax)
+static int delete_oldest_sfile(const char* path, uint32_t vmax)
 {
 	char command[39 + sizeof(int) + PATH_MAX];
 
 	char *sdir_path = get_sdir_path(path);
-	sprintf(command, "ls %s | sed -e '1, %dd' | xargs -d '\n' rm",
-		sdir_path, vmax);
+	sprintf(command, "ls %s | sed -e '1, %dd' | xargs -d '\n' rm", sdir_path, vmax);
 
 	return system(command);
 }
@@ -410,19 +409,33 @@ static int delete_oldest_sfile(const char* path, int vmax)
  */
 static int update_metadata(const char* path, const char* new_curr_vnum)
 {
+	#ifdef DEBUG
+		printf("Updating metadata: new_curr_vnum is %s\n", new_curr_vnum);
+	#endif
 	int res;
 
 	/* Get metadata from metadata file. */
 	struct metadata md;
 	char *meta_path = get_metadata_path(path);
-	int meta_fd = open(meta_path, O_TRUNC | O_WRONLY);
-	res = read(meta_fd, &md, sizeof(struct metadata));
+	FILE *meta_fp = fopen(meta_path, "rb+");
+	res = fread(&md, sizeof(struct metadata), 1, meta_fp);
+	if (res == 0) {
+		fprintf(stderr, "Trouble reading metadata file. Metadata not updated.\n");
+		return -1;
+	}
+	#ifdef DEBUG
+		printf("	Metadata path is %s\n", meta_path);
+		printf("	Vmax is %d\n", md.vmax);
+	#endif
 
 	/* Update curr_vnum and vcount (if necessary) */
 	strcpy(md.curr_vnum, new_curr_vnum);
 
 	int vmax_exceeded = (md.vmax != -1) && ((md.vcount + 1) > md.vmax);
 	if (vmax_exceeded) {
+		#ifdef DEBUG
+			printf("	Vmax (%d) exceeded!\n", md.vmax);
+		#endif
 		// # of sfiles exceeds maximum: delete oldest sfile.
 		delete_oldest_sfile(path, md.vmax);
 	}
@@ -431,9 +444,13 @@ static int update_metadata(const char* path, const char* new_curr_vnum)
 	}
 
 	/* Update metadata file with new information. */
-	lseek(meta_fd, 0, SEEK_SET);
-	res = write(meta_fd, &md, sizeof(struct metadata));
-	close(meta_fd);
+	res = fseek(meta_fp, 0L, SEEK_SET);
+	res |= fwrite(&md, sizeof(struct metadata), 1, meta_fp);
+	if (res <= 0) {
+		fprintf(stderr, "Trouble writing to metadata file.\n");
+		return -1;
+	}
+	fclose(meta_fp);
 
 	return res;
 }
@@ -464,8 +481,9 @@ static int snap(const char *path)
 	#endif
 
 	/* Get contents of file being "snapped" */
-	char old_buf[old_sz];
-	res = read(old_fd, &old_buf, old_sz);
+	char buf[old_sz];
+	lseek(old_fd, 0, SEEK_SET);
+	res = read(old_fd, &buf, old_sz);
 	if (res < 0) {
 		fprintf(stderr, "Error while making snapshot: %d\n", errno);
 		return res;
@@ -483,7 +501,7 @@ static int snap(const char *path)
 	#endif
 
 	int new_fd = open(next_path, O_CREAT | O_WRONLY, S_IRWXU);
-	res = write(new_fd, old_buf, old_sz);
+	res = write(new_fd, buf, old_sz);
 	if (res < 0) {
 		printf("Error while making snapshot %d\n", errno);
 		return res;
@@ -546,9 +564,13 @@ static int switch_current_version(const char *path)
 //TODO: Test if this happens successfully!
 static int studentfs_getattr(const char *path, struct stat *stbuf)
 {
+	#ifdef DEBUG
+		printf("Getting attributes for %s\n", path);
+	#endif
+
 	int res;
 
-	if (is_sdir(path)) {
+	else if (is_snap(path) || is_switch(path) || is_sdir(path)) {
 		char *new_path = get_curr_verr_path(path);
 		res = lstat(new_path, stbuf);
 	} else {
