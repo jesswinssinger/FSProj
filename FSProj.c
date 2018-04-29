@@ -570,7 +570,19 @@ static int studentfs_getattr(const char *path, struct stat *stbuf)
 
 	int res;
 
-	if (is_snap(path) || is_switch(path) || is_sdir(path)) {
+	if (is_snap(path)) {
+		char fpath[PATH_MAX];
+		strcpy(fpath, path);
+		fpath[strlen(fpath) + 1 - sizeof(SNAP_SUFFIX)] = '\0';
+		res = lstat(fpath, stbuf);
+	}
+	else if (is_switch(path)) {
+		char fpath[PATH_MAX];
+		strcpy(fpath, path);
+		fpath[strlen(fpath) + 1 - sizeof(SWITCH_SUFFIX)] = '\0';
+		res = lstat(fpath, stbuf);
+	}
+	else if (is_sdir(path)) {
 		char *new_path = get_curr_verr_path(path);
 		res = lstat(new_path, stbuf);
 	} else {
