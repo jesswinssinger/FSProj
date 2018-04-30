@@ -45,7 +45,7 @@
 #include "structs.h"
 
 /** TODOS
- *TODO: Separate source files: 
+ *TODO: Separate source files:
  *	sdir.c (helpers for paths, is_sdir, mk sdir, mk metadata, etc)
  *	version.c (snap, switch, ver changes, delete file, update metadata, etc.)
  *	or just include all of thse in one file
@@ -132,6 +132,22 @@ int get_sdir_file_fd(const char *path)
 		printf("Opened fd\n");
 	#endif
 	return fd;
+}
+
+int get_metadata(const char *path, struct metadata *md)
+{
+	int res;
+
+	char *meta_path = get_metadata_path(path);
+	FILE *meta_fp = fopen(meta_path, "rb+");
+
+	res = fread(md, sizeof(struct metadata), 1, meta_fp);
+	if (res == 0) {
+		fprintf(stderr, "Trouble reading metadata file.\n");
+		return -1;
+	}
+
+	return 0;
 }
 
 int is_sdir(const char *path)
@@ -244,15 +260,6 @@ static int mk_sdir(const char* path)
 
 	close(res);
 	free(file_path);
-
-	return 0;
-}
-
-int ver_changes(char *path, char *buf)
-{
-	// Get diff
-	// Get metadata
-	// if diff greater than size_freq, take snap
 
 	return 0;
 }
@@ -386,7 +393,6 @@ char *get_next_ver(const char *path)
  * Metadata updates are all handled in update_metadata().
  */
 //TODO: test this!
-//TODO: ensure there is never a case where it would delete metadata...
 static int delete_oldest_sfile(const char* path, uint32_t vmax)
 {
 	char command[39 + sizeof(int) + PATH_MAX];
@@ -409,15 +415,11 @@ static int update_metadata(const char* path, const char* new_curr_vnum)
 
 	/* Get metadata from metadata file. */
 	struct metadata md;
-	char *meta_path = get_metadata_path(path);
-	FILE *meta_fp = fopen(meta_path, "rb+");
-	res = fread(&md, sizeof(struct metadata), 1, meta_fp);
-	if (res == 0) {
-		fprintf(stderr, "Trouble reading metadata file. Metadata not updated.\n");
-		return -1;
-	}
+	res = get_metadata(path, &md);
+	if (res != 0)
+		return res;
+
 	#ifdef DEBUG
-	printf("	Metadata path is %s\n", meta_path);
 	printf("	Vmax is %d\n", md.vmax);
 	#endif
 
@@ -437,7 +439,7 @@ static int update_metadata(const char* path, const char* new_curr_vnum)
 	}
 
 	/* Update metadata file with new information. */
-	res = fseek(meta_fp, 0L, SEEK_SET);
+	FILE *meta_fp = fopen(get_metadata_path(path), "wb+");
 	res |= fwrite(&md, sizeof(struct metadata), 1, meta_fp);
 	if (res <= 0) {
 		fprintf(stderr, "Trouble writing to metadata file.\n");
@@ -546,21 +548,81 @@ static int switch_current_version(const char *path)
 
 	/* Update metadata file. */
 	struct metadata md;
-	char *meta_path = get_metadata_path(fpath);
-	FILE *meta_fp = fopen(meta_path, "rb+");
-	res = fread(&md, sizeof(struct metadata), 1, meta_fp);
-	if (res == 0) {
-		fprintf(stderr, "Trouble reading metadata.\n");
-		return 1;
-	}
+	res = get_metadata(fpath, &md);
+	if (res != 0)
+		return res;
+
 	strcpy(md.curr_vnum, new_vnum);
-	fseek(meta_fp, 0L, SEEK_SET);
+
+	FILE *meta_fp = fopen(get_metadata_path(fpath), "rb+");
 	res = fwrite(&md, sizeof(struct metadata), 1, meta_fp);
 	if (res == 0) {
 		fprintf(stderr, "Trouble updating version number.\n");
 		return 1;
 	}
 	fclose(meta_fp);
+
+	return 0;
+}
+
+//TODO: TEST THIS!
+int ver_changes(char *path, char *buf, size_t size)
+{
+	int res;
+
+	// Get metadata
+	struct metadata md;
+	res = get_metadata(path, &md);
+	if (res != 0)
+		return res;
+
+	// If size_freq set to -1, don't bother.
+	if (md.size_freq == -1)
+		return 0;
+
+	// Save buf to a temp file
+	char temp_path[PATH_MAX];
+	strcpy(temp_path, get_sdir_path(path));
+	strcat(temp_path, "/temp");
+
+	FILE *t_fp = fopen(temp_path, "w+");
+	res = fwrite(buf, sizeof(char), size, t_fp);
+	if (res == 0) {
+		fprintf(stderr, "Trouble measuring size of change.\n");
+		return 1;
+	}
+	fclose(t_fp);
+
+	// Get diff
+	size_t diff_size;
+	char *command = malloc(19 + PATH_MAX + PATH_MAX);
+	char curr_verr[PATH_MAX];
+	strcpy(curr_verr, get_curr_verr_path(path));
+	sprintf(command, "diff %s %s >> diff.txt", curr_verr, temp_path);
+	res = system(command);
+	if (res < 0)
+		return res;
+
+	FILE *diff_fp = fopen("diff.txt", "r");
+	fseek(diff_fp, 0L, SEEK_END);
+	diff_size = ftell(diff_fp);
+	fclose(diff_fp);
+
+	// Delete temporary files
+	res = remove("diff.txt");
+	res |= remove(temp_path);
+	if (res != 0) {
+		fprintf(stderr, "Failed to remove temporary files.\n");
+		return res;
+	}
+
+	// if diff greater than size_freq, take snap
+	if(diff_size > md.size_freq) {
+		snap(path);
+	}
+
+	free(command);
+
 	return 0;
 }
 
@@ -987,6 +1049,9 @@ static int studentfs_write(const char *path, const char *buf, size_t size,
 
 	if (is_sdir(path)) {
 		int fd = get_sdir_file_fd(path);
+		//TODO: is this sufficient? Does buf really hold everything
+		// that needs to be written...?
+		//ver_changes(path, buf, size);
 		res = pwrite(fd, buf, size, offset);
 		close(fd);
 	}
