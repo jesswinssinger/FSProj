@@ -44,6 +44,15 @@
 #include "macros.h"
 #include "structs.h"
 
+/** TODOS
+ *TODO: Separate source files: 
+ *	sdir.c (helpers for paths, is_sdir, mk sdir, mk metadata, etc)
+ *	version.c (snap, switch, ver changes, delete file, update metadata, etc.)
+ *	or just include all of thse in one file
+ * TODO: test read and write
+ * TODO: test ver_changes and delete_oldest_sfile
+*/
+
 /* Helper methods */
 char *get_sdir_path(const char *path)
 {
@@ -239,16 +248,12 @@ static int mk_sdir(const char* path)
 	return 0;
 }
 
-// TODO: Write this
-/* Version changes gets the number of changes bytewise made to a file
- * at a file descriptor.
- *
- * My thinking on implementation:
- * Store the fd's and associated number of changes made to them in
- * a data structure of file descriptors globally.
- */
 int ver_changes(char *path, char *buf)
 {
+	// Get diff
+	// Get metadata
+	// if diff greater than size_freq, take snap
+
 	return 0;
 }
 
@@ -381,12 +386,13 @@ char *get_next_ver(const char *path)
  * Metadata updates are all handled in update_metadata().
  */
 //TODO: test this!
+//TODO: ensure there is never a case where it would delete metadata...
 static int delete_oldest_sfile(const char* path, uint32_t vmax)
 {
 	char command[39 + sizeof(int) + PATH_MAX];
 
 	char *sdir_path = get_sdir_path(path);
-	sprintf(command, "ls %s | sed -e '1, %dd' | xargs -d '\n' rm", sdir_path, vmax);
+	sprintf(command, "rm (ls %s -t | grep -v 'metadata' | tail -1)", sdir_path);
 
 	return system(command);
 }
