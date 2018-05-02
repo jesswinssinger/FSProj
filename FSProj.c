@@ -51,6 +51,11 @@
  *	or just include all of thse in one file
  * TODO: test read and write
  * TODO: test ver_changes and delete_oldest_sfile
+ * TODO: file deleted -> delete .SDIR
+ * TODO: .SDIR deleted -> load contents into the file
+ * TODO: check through document we sent to Kuenning and 
+ * TODO: diff and patch files
+ * TODO: create a tree visualization
 */
 
 /* Helper methods */
@@ -306,9 +311,8 @@ char *_get_next_ver(const char *path, char *vnum)
 
 	// Build the part of the vnum "branch" before the final
 	// delimited number (ie a.b.c.d -> a.b.c.)
-	// vnum_branch[0] = '\0';
-	strcpy(vnum_branch, tokens[0]);
-	for(int i = 1; i < token_i - 1; i++) {
+	vnum_branch[0] = '\0';
+	for(int i = 0; i < token_i - 1; i++) {
 		strcat(vnum_branch, tokens[i]);
 		strcat(vnum_branch, ".");
 	}
@@ -331,11 +335,14 @@ char *_get_next_ver(const char *path, char *vnum)
 	int final_num = atoi(final_token);
 	char final_num_str[MAX_VNUM_LEN];
 	sprintf(final_num_str, "%d", final_num+1);
-
+	strcat(final_path, final_num_str);
 
 	// If there is already a child of the current directory,
 	// make a new branch (see Wiki research if this is confusing)
 	if (access(final_path, F_OK) != -1) {
+		strcpy(final_path, path);
+		strcat(final_path, "/");
+		strcat(final_path, vnum_branch);
 		strcat(final_path, final_token);
 		strcat(final_path, ".1");
 		while (access(final_path, F_OK) != -1) {
@@ -343,9 +350,7 @@ char *_get_next_ver(const char *path, char *vnum)
 			strcat(final_path, ".1");
 		}
 	}
-	else { //If not, keep the incremented number.
-		strcat(final_path, final_num_str);
-	}
+	// If it falls through, then there does not exist a child.
 
 	#ifdef DEBUG
 	printf("	Final path is %s\n", final_path);
