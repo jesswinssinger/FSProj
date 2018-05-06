@@ -56,6 +56,7 @@
 */
 
 /* Helper methods */
+
 char *get_sdir_path(const char *path)
 {
 	char *sdir_path = malloc(PATH_MAX);
@@ -194,13 +195,20 @@ static int mk_metadata_file(const char* sdir_path)
 	// Create metadata struct
 	// TODO: make vmax and size_freq configurable with mkdir
 	// (requires revisiting mk_sdir)
+	int freq_fd = open(SDIR_INFO_PATH, O_RDONLY);
+	int len = lseek(freq_fd, 0, SEEK_END);
+	char *freq_buf = malloc(len);
+	lseek(freq_fd, 0, SEEK_SET);
+	read(freq_fd, freq_buf, len);
+	close(freq_fd);
+
 	struct metadata md;
 		strcpy(md.curr_vnum, "1");
 		md.vcount = 1;
 		md.vmax = -1;
-		md.size_freq = 100;
+		md.size_freq = atoi(freq_buf);
 
-	// Create path for metadata
+		// Create path for metadata
 	char mpath[PATH_MAX];
 	strcpy(mpath, sdir_path);
 	strcat(mpath, METADATA_FILENAME);
@@ -1219,6 +1227,10 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 					fwrite(child_buf, 1, child_sz, parent);
 					fclose(parent);
 					close(fi->fh);
+					char *parent_num = malloc(PATH_MAX);
+					strcpy(parent_num, parent_path);
+					parent_num = basename(parent_num);
+					update_metadata(path, parent_num);
 					remove((const char *) child_path);
 					return 0;
 				}

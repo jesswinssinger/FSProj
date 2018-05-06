@@ -4,3 +4,4 @@
 #define SWITCH_SUFFIX ".SWI"
 #define MAX_NO_CHANGES 50
 #define METADATA_FILENAME "/metadata"
+#define SDIR_INFO_PATH "/tmp/SDIR_info"
