@@ -49,14 +49,10 @@
  *	sdir.c (helpers for paths, is_sdir, mk sdir, mk metadata, etc)
  *	version.c (snap, switch, ver changes, delete file, update metadata, etc.)
  *	or just include all of thse in one file
- * TODO: test read and write
- * TODO: test ver_changes and delete_oldest_sfile
  * TODO: file deleted -> delete .SDIR
  * TODO: .SDIR deleted -> load contents into the file
  * TODO: check through document we sent to Kuenning and 
- * TODO: diff and patch files
  * TODO: create a tree visualization
- * TODO: check what the proble
 */
 
 /* Helper methods */
@@ -599,6 +595,34 @@ int ver_changes(char *curr_path, char *parent_path)
 	return diff_size;
 }
 
+
+char *get_parent_path(char *path, char *curr_vnum) {
+	char *parent_path = malloc(PATH_MAX);
+	char *base = get_sdir_path(path);
+	strcpy(parent_path, base);
+	strcat(parent_path, "/");
+	char *temp = strtok(curr_vnum, ".");
+	char *temp2 = '\0';
+	while (temp != NULL) {
+		temp2 = strtok(NULL, ".");
+		if (temp2 == NULL) {
+			// last currently in temp
+			break;
+		}
+		strcat(parent_path, temp);
+		strcat(parent_path, ".");
+		temp = temp2;
+	}
+	free(temp2);
+	
+	int final_num = atoi(temp);
+	char final_num_str[PATH_MAX];
+	sprintf(final_num_str, "%d", final_num-1);
+	
+	strcat(parent_path, final_num_str);
+	return parent_path;
+}
+
 /* FUSE methods */
 //TODO: Returns for snap and switch should be more elegant
 static int studentfs_getattr(const char *path, struct stat *stbuf)
@@ -1086,33 +1110,6 @@ static int studentfs_flush(const char *path, struct fuse_file_info *fi)
 		return -errno;
 
 	return 0;
-}
-
-char *get_parent_path(char *path, char *curr_vnum) {
-	char *parent_path = malloc(PATH_MAX);
-	char *base = get_sdir_path(path);
-	strcpy(parent_path, base);
-	strcat(parent_path, "/");
-	char *temp = strtok(curr_vnum, ".");
-	char *temp2 = '\0';
-	while (temp != NULL) {
-		temp2 = strtok(NULL, ".");
-		if (temp2 == NULL) {
-			// last currently in temp
-			break;
-		}
-		strcat(parent_path, temp);
-		strcat(parent_path, ".");
-		temp = temp2;
-	}
-	free(temp2);
-	
-	int final_num = atoi(temp);
-	char final_num_str[PATH_MAX];
-	sprintf(final_num_str, "%d", final_num-1);
-	
-	strcat(parent_path, final_num_str);
-	return parent_path;
 }
 
 static int studentfs_release(const char *path, struct fuse_file_info *fi)
