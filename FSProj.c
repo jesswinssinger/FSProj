@@ -56,6 +56,7 @@
 */
 
 /* Helper methods */
+
 char *get_sdir_path(const char *path)
 {
 	char *sdir_path = malloc(PATH_MAX);
@@ -184,7 +185,7 @@ char *remove_SDIR_ftype(const char *path)
 	return sdir_path;
 }
 
-static int mk_metadata_file(const char* sdir_path)
+static int mk_metadata_file(const char* sdir_path, int size_freq)
 {
 	#ifdef DEBUG
 	printf("Making metadata file\n");
@@ -198,7 +199,7 @@ static int mk_metadata_file(const char* sdir_path)
 		strcpy(md.curr_vnum, "1");
 		md.vcount = 1;
 		md.vmax = -1;
-		md.size_freq = 100;
+		md.size_freq = size_freq;
 
 	// Create path for metadata
 	char mpath[PATH_MAX];
@@ -217,7 +218,7 @@ static int mk_metadata_file(const char* sdir_path)
 	return 0;
 }
 
-static int mk_sdir(const char* path)
+static int mk_sdir(const char* path, int size_freq)
 {
 	#ifdef DEBUG
 	printf("In mk_sdir\n");
@@ -297,7 +298,7 @@ static int mk_sdir(const char* path)
 	#endif
 
 	// Create metadata file
-	mk_metadata_file(path);
+	mk_metadata_file(path, size_freq);
 	
 	if (access(orig_file, F_OK) == -1) {
 		char *file_path = get_file_path(path);
@@ -852,9 +853,10 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
 	int res;
-
-	if (is_sdir_ftype(path)) {
-		res = mk_sdir(path);
+	char *realpath = strtok((char *) path, ";");
+	if (realpath != NULL && is_sdir_ftype(realpath)) {
+		char *size_freq = strtok(NULL, ";");
+		res = mk_sdir(path, atoi(size_freq));
 	}
 	else {
 		res = mkdir(path, mode);
