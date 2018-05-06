@@ -224,6 +224,50 @@ static int mk_sdir(const char* path)
 	#endif
 	int res;
 
+	char *fname = malloc(PATH_MAX);
+	char *dir   = malloc(PATH_MAX);
+	strcpy(fname, path);
+	strcpy(dir, path);
+	fname = basename(fname);
+	dir   = dirname(dir);
+	char *orig_file = malloc(PATH_MAX);
+	strcpy(orig_file, dir);
+	strcat(orig_file, "/");
+
+	fname = strtok(fname, ".");
+	strcat(orig_file, fname);
+	
+	printf("orig_file is %s\n", orig_file);
+	char *orig_buf = "";
+	size_t orig_size = 0;
+	if (access(orig_file, F_OK) != -1) {
+		// File exists, copy contents
+		int orig_res = 0;
+		int orig_fd = open(orig_file, O_RDONLY);
+		if (orig_fd < 0) {
+			return -1;
+		}
+		orig_size = lseek(orig_fd, 0, SEEK_END);
+		if (orig_size < 0) {
+			return -1;
+		}
+		orig_res |= lseek(orig_fd, 0, SEEK_SET);
+		if (orig_res < 0) {
+			return -1;
+		}
+		orig_buf = malloc(orig_size);
+		orig_res |= read(orig_fd, orig_buf, orig_size);
+		if (orig_res < 0) {
+			return -1;
+		}
+		orig_res |= close(orig_fd);
+		if (orig_res < 0) {
+			return -1;
+		}
+		printf("Made it to the end\n");
+		sleep(3);
+	}
+
 	// Create an SDIR
 	res = mkdir(path, S_IRWXU | 0755);
 	if (res < 0)
@@ -240,6 +284,13 @@ static int mk_sdir(const char* path)
 	res = creat(sfile_path, S_IRWXU | 0755);
 	if (res < 0)
 		return res;
+	
+	res = open(sfile_path, O_WRONLY);
+	int write_sz = write(res, orig_buf, orig_size);
+	if (write_sz < 0) {
+		printf("Couldn't write to file\n");
+	}
+	close(res);
 
 	#ifdef DEBUG
 	printf("	Created first sfile: %s\n",sfile_path);
@@ -247,21 +298,23 @@ static int mk_sdir(const char* path)
 
 	// Create metadata file
 	mk_metadata_file(path);
+	
+	if (access(orig_file, F_OK) != -1) {
+		char *file_path = get_file_path(path);
+		res = open(file_path, O_CREAT | O_RDWR, 0755 | S_IRWXU);
+		if (res < 0) {
+			fprintf(stderr, "Error making SDIR's corresponding file %s.\n", file_path);
+			return res;
+		}
 
-	// Create the corresponding file
-	char *file_path = get_file_path(path);
-	res |= open(file_path, O_CREAT | O_RDWR, 0755 | S_IRWXU);
-	if (res < 0) {
-		fprintf(stderr, "Error making SDIR's corresponding file %s.\n", file_path);
-		return res;
+		#ifdef DEBUG
+		printf("Created corresponding file: %s\n", file_path);
+		#endif
+		free(file_path);
 	}
 
-	#ifdef DEBUG
-	printf("Created corresponding file: %s\n", file_path);
-	#endif
 
 	close(res);
-	free(file_path);
 
 	return 0;
 }
@@ -996,7 +1049,6 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 			return -errno;
 		fi->fh = fd;
 	}
-
 	return 0;
 }
 
