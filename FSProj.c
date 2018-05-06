@@ -1049,7 +1049,6 @@ static int studentfs_create(const char *path, mode_t mode, struct fuse_file_info
 			return -errno;
 		fi->fh = fd;
 	}
-
 	return 0;
 }
 
@@ -1358,4 +1357,3 @@ int main(int argc, char *argv[])
 	umask(0);
 	return fuse_main(argc, argv, &studentfs_oper, NULL);
 }
-     
