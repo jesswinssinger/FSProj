@@ -202,7 +202,7 @@ static int mk_metadata_file(const char* sdir_path)
 		strcpy(md.curr_vnum, "1");
 		md.vcount = 1;
 		md.vmax = -1;
-		md.size_freq = -1;
+		md.size_freq = 100;
 
 	// Create path for metadata
 	char mpath[PATH_MAX];
@@ -475,6 +475,11 @@ static int snap(const char *path)
 
 	/* Get size of file being "snapped" */
 	int old_fd = get_sdir_file_fd(fpath);
+	
+	#ifdef DEBUG
+	printf("Path fd is %d\n", old_fd);
+	#endif
+
 	off_t old_sz = lseek(old_fd, 0, SEEK_END);
 
 	#ifdef DEBUG
@@ -572,64 +577,23 @@ static int switch_current_version(const char *path)
 }
 
 //TODO: TEST THIS!
-int ver_changes(char *path, char *buf, size_t size)
+int ver_changes(char *curr_path, char *parent_path)
 {
 	int res;
-
-	// Get metadata
-	struct metadata md;
-	res = get_metadata(path, &md);
-	if (res != 0)
-		return res;
-
-	// If size_freq set to -1, don't bother.
-	if (md.size_freq == -1)
-		return 0;
-
-	// Save buf to a temp file
-	char temp_path[PATH_MAX];
-	strcpy(temp_path, get_sdir_path(path));
-	strcat(temp_path, "/temp");
-
-	FILE *t_fp = fopen(temp_path, "w+");
-	res = fwrite(buf, sizeof(char), size, t_fp);
-	if (res == 0) {
-		fprintf(stderr, "Trouble measuring size of change.\n");
-		return 1;
-	}
-	fclose(t_fp);
-
-	// Get diff
-	size_t diff_size;
+	
 	char *command = malloc(19 + PATH_MAX + PATH_MAX);
-	char curr_verr[PATH_MAX];
-	strcpy(curr_verr, get_curr_verr_path(path));
-	sprintf(command, "diff %s %s >> diff.txt", curr_verr, temp_path);
+	sprintf(command, "diff %s %s >> diff.txt", curr_path, parent_path);
 	res = system(command);
 	if (res < 0)
 		return res;
 
 	FILE *diff_fp = fopen("diff.txt", "r");
 	fseek(diff_fp, 0L, SEEK_END);
-	diff_size = ftell(diff_fp);
+	int diff_size = ftell(diff_fp);
 	fclose(diff_fp);
 
-	// Delete temporary files
-	res = remove("diff.txt");
-	res |= remove(temp_path);
-	if (res != 0) {
-		fprintf(stderr, "Failed to remove temporary files.\n");
-		return res;
-	}
-
-	// if diff greater than size_freq, take snap
-	if(diff_size > md.size_freq) {
-		snap(path);
-	}
-
 	free(command);
-
-	return 0;
+	return diff_size;
 }
 
 /* FUSE methods */
@@ -942,6 +906,7 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 
 	int fd = -1;
 	int create_flag = (fi->flags & O_CREAT) == O_CREAT;
+	int write_flag  = (fi->flags & O_WRONLY) == O_WRONLY;
 
 	if (is_snap(path)) {
 		printf("Is snap\n");
@@ -956,6 +921,13 @@ static int studentfs_open(const char *path, struct fuse_file_info *fi)
 	else if (is_sdir(path) && access(path, F_OK) != -1) {
 		printf("Is sdir\n");
 		// An SDIR exists, open a path to the current file
+		if (write_flag) {
+			// Create the next copy for writing, so we can compare the two.
+			char snap_path[PATH_MAX+4];
+			strcpy(snap_path, path);
+			strcat(snap_path, ".SNA");
+			snap(snap_path);
+		}
 		fd = get_sdir_file_fd(path);
 		if (fd < 0) {
 			printf("Couldn't open hidden file, errno: %d\n", errno);
@@ -1113,11 +1085,105 @@ static int studentfs_flush(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+char *get_parent_path(char *path, char *curr_vnum) {
+	char *parent_path = malloc(PATH_MAX);
+	char *base = get_sdir_path(path);
+	strcpy(parent_path, base);
+	strcat(parent_path, "/");
+	char *temp = strtok(curr_vnum, ".");
+	char *temp2 = '\0';
+	while (temp != NULL) {
+		temp2 = strtok(NULL, ".");
+		if (temp2 == NULL) {
+			// last currently in temp
+			break;
+		}
+		strcat(parent_path, temp);
+		strcat(parent_path, ".");
+		temp = temp2;
+	}
+	free(temp2);
+	
+	int final_num = atoi(temp);
+	char final_num_str[PATH_MAX];
+	sprintf(final_num_str, "%d", final_num-1);
+	
+	strcat(parent_path, final_num_str);
+	return parent_path;
+}
+
 static int studentfs_release(const char *path, struct fuse_file_info *fi)
 {
-	(void) path;
-	close(fi->fh);
+	if (is_sdir(path)) {
+		if ((fi->flags & O_WRONLY) == O_WRONLY) {
+			struct metadata meta;
+			get_metadata(path, &meta);
+			printf("got meta\n");
+			sleep(1);			
+			// Get final number off of vnum
+			int final_num = 0;
+			char *temp = strtok(meta.curr_vnum, ".");
+			while (temp != NULL) {
+				final_num = atoi((const char *) temp);
+				temp = strtok(NULL, ".");
+			}
+			printf("got final num\n");
+			sleep(1);
 
+			// If there are no other children
+			if (final_num > 1) {
+				printf("Only child case\n");
+				sleep(2);
+				// Construct the parent's path
+				char *parent_path = get_parent_path((char *) path, meta.curr_vnum);
+
+				// Get most recent (currently open) version's file path				
+				char *child_path = get_curr_verr_path(path);
+				int res = ver_changes(child_path, parent_path);
+				
+				// If new file's changes are too small 
+				printf("res is %d, size_freq is %d\n", res, meta.size_freq);
+				printf("child path is %s\n", child_path);
+				if (res < meta.size_freq) {
+					// that file must be removed and all changes written to parent file
+					size_t child_sz = lseek(fi->fh, 0, SEEK_END);
+					sleep(2);
+					FILE *child = fopen(child_path, "r");
+					if (child == NULL) {
+						printf("couldn't open child file\n");
+						return -1;
+					}
+					
+					res = lseek(fi->fh, 0, SEEK_SET);
+					if (res < 0) {
+						printf("Couldn't seek from child file\n");
+						return -errno;
+					}
+
+					char child_buf[child_sz];
+					fread(child_buf, 1, child_sz, child);
+					if (res < 0) {
+						printf("Couldn't read from child file\n");
+						return -errno;
+					}
+
+					// Write all of child_path's contents to parent_path with nothing inside it.
+					FILE *parent = fopen(parent_path, "w+");
+					if (parent == NULL) {
+						printf("Couldn't find parent of current file\n");
+						return -1;
+					}
+					fwrite(child_buf, 1, child_sz, parent);
+					fclose(parent);
+					close(fi->fh);
+					remove((const char *) child_path);
+					return 0;
+				}
+			}
+			// Else it is fine, and we keep the current version.
+		}
+	}
+	close(fi->fh);
 	return 0;
 }
 
