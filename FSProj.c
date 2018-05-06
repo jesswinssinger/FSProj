@@ -249,11 +249,13 @@ static int mk_sdir(const char* path)
 	mk_metadata_file(path);
 
 	// Create the corresponding file
-	char *file_path = get_file_path(path);
-	res |= open(file_path, O_CREAT | O_RDWR, 0755 | S_IRWXU);
-	if (res < 0) {
-		fprintf(stderr, "Error making SDIR's corresponding file %s.\n", file_path);
-		return res;
+	if (access(orig_file, F_OK) == -1) {
+		char *file_path = get_file_path(path);
+		res = open(file_path, O_CREAT | O_RDWR, 0755 | S_IRWXU);
+		if (res < 0) {
+			fprintf(stderr, "Error making SDIR's corresponding file %s.\n", file_path);
+			return res;
+		}
 	}
 
 	#ifdef DEBUG
