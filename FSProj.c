@@ -185,7 +185,7 @@ char *remove_SDIR_ftype(const char *path)
 	return sdir_path;
 }
 
-static int mk_metadata_file(const char* sdir_path, int size_freq)
+static int mk_metadata_file(const char* sdir_path)
 {
 	#ifdef DEBUG
 	printf("Making metadata file\n");
@@ -195,13 +195,20 @@ static int mk_metadata_file(const char* sdir_path, int size_freq)
 	// Create metadata struct
 	// TODO: make vmax and size_freq configurable with mkdir
 	// (requires revisiting mk_sdir)
+	int freq_fd = open(SDIR_INFO_PATH, O_RDONLY);
+	int len = lseek(freq_fd, 0, SEEK_END);
+	char *freq_buf = malloc(len);
+	lseek(freq_fd, 0, SEEK_SET);
+	read(freq_fd, freq_buf, len);
+	close(freq_fd);
+
 	struct metadata md;
 		strcpy(md.curr_vnum, "1");
 		md.vcount = 1;
 		md.vmax = -1;
-		md.size_freq = size_freq;
+		md.size_freq = atoi(freq_buf);
 
-	// Create path for metadata
+		// Create path for metadata
 	char mpath[PATH_MAX];
 	strcpy(mpath, sdir_path);
 	strcat(mpath, METADATA_FILENAME);
@@ -218,7 +225,7 @@ static int mk_metadata_file(const char* sdir_path, int size_freq)
 	return 0;
 }
 
-static int mk_sdir(const char* path, int size_freq)
+static int mk_sdir(const char* path)
 {
 	#ifdef DEBUG
 	printf("In mk_sdir\n");
@@ -298,7 +305,7 @@ static int mk_sdir(const char* path, int size_freq)
 	#endif
 
 	// Create metadata file
-	mk_metadata_file(path, size_freq);
+	mk_metadata_file(path);
 	
 	if (access(orig_file, F_OK) == -1) {
 		char *file_path = get_file_path(path);
@@ -853,10 +860,9 @@ static int studentfs_mknod(const char *path, mode_t mode, dev_t rdev)
 static int studentfs_mkdir(const char *path, mode_t mode)
 {
 	int res;
-	char *realpath = strtok((char *) path, ";");
-	if (realpath != NULL && is_sdir_ftype(realpath)) {
-		char *size_freq = strtok(NULL, ";");
-		res = mk_sdir(path, atoi(size_freq));
+
+	if (is_sdir_ftype(path)) {
+		res = mk_sdir(path);
 	}
 	else {
 		res = mkdir(path, mode);
@@ -1221,6 +1227,10 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 					fwrite(child_buf, 1, child_sz, parent);
 					fclose(parent);
 					close(fi->fh);
+					char *parent_num = malloc(PATH_MAX);
+					strcpy(parent_num, parent_path);
+					parent_num = basename(parent_num);
+					update_metadata(path, parent_num);
 					remove((const char *) child_path);
 					return 0;
 				}
