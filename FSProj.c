@@ -51,7 +51,7 @@
  *	or just include all of thse in one file
  * TODO: file deleted -> delete .SDIR
  * TODO: .SDIR deleted -> load contents into the file
- * TODO: check through document we sent to Kuenning and 
+ * TODO: check through document we sent to Kuenning and
  * TODO: create a tree visualization
 */
 
@@ -224,6 +224,50 @@ static int mk_sdir(const char* path)
 	#endif
 	int res;
 
+	char *fname = malloc(PATH_MAX);
+	char *dir   = malloc(PATH_MAX);
+	strcpy(fname, path);
+	strcpy(dir, path);
+	fname = basename(fname);
+	dir   = dirname(dir);
+	char *orig_file = malloc(PATH_MAX);
+	strcpy(orig_file, dir);
+	strcat(orig_file, "/");
+
+	fname = strtok(fname, ".");
+	strcat(orig_file, fname);
+
+	printf("orig_file is %s\n", orig_file);
+	char *orig_buf = "";
+	size_t orig_size = 0;
+	if (access(orig_file, F_OK) != -1) {
+		// File exists, copy contents
+		int orig_res = 0;
+		int orig_fd = open(orig_file, O_RDONLY);
+		if (orig_fd < 0) {
+			return -1;
+		}
+		orig_size = lseek(orig_fd, 0, SEEK_END);
+		if (orig_size < 0) {
+			return -1;
+		}
+		orig_res |= lseek(orig_fd, 0, SEEK_SET);
+		if (orig_res < 0) {
+			return -1;
+		}
+		orig_buf = malloc(orig_size);
+		orig_res |= read(orig_fd, orig_buf, orig_size);
+		if (orig_res < 0) {
+			return -1;
+		}
+		orig_res |= close(orig_fd);
+		if (orig_res < 0) {
+			return -1;
+		}
+		printf("Made it to the end\n");
+		sleep(3);
+	}
+
 	// Create an SDIR
 	res = mkdir(path, S_IRWXU | 0755);
 	if (res < 0)
@@ -241,6 +285,13 @@ static int mk_sdir(const char* path)
 	if (res < 0)
 		return res;
 
+	res = open(sfile_path, O_WRONLY);
+	int write_sz = write(res, orig_buf, orig_size);
+	if (write_sz < 0) {
+		printf("Couldn't write to file\n");
+	}
+	close(res);
+
 	#ifdef DEBUG
 	printf("	Created first sfile: %s\n",sfile_path);
 	#endif
@@ -248,7 +299,6 @@ static int mk_sdir(const char* path)
 	// Create metadata file
 	mk_metadata_file(path);
 
-	// Create the corresponding file
 	if (access(orig_file, F_OK) == -1) {
 		char *file_path = get_file_path(path);
 		res = open(file_path, O_CREAT | O_RDWR, 0755 | S_IRWXU);
@@ -256,14 +306,15 @@ static int mk_sdir(const char* path)
 			fprintf(stderr, "Error making SDIR's corresponding file %s.\n", file_path);
 			return res;
 		}
+
+		#ifdef DEBUG
+		printf("Created corresponding file: %s\n", file_path);
+		#endif
+		free(file_path);
 	}
 
-	#ifdef DEBUG
-	printf("Created corresponding file: %s\n", file_path);
-	#endif
 
 	close(res);
-	free(file_path);
 
 	return 0;
 }
@@ -288,7 +339,7 @@ char *_get_next_ver(const char *path, char *vnum)
 	#ifdef DEBUG
 	printf("Res is %s\n", res);
 	#endif
-	
+
 	if (res != NULL) {
 		strcpy(tokens[token_i], res);
 		token_i++;
@@ -476,7 +527,7 @@ static int snap(const char *path)
 
 	/* Get size of file being "snapped" */
 	int old_fd = get_sdir_file_fd(fpath);
-	
+
 	#ifdef DEBUG
 	printf("Path fd is %d\n", old_fd);
 	#endif
@@ -581,7 +632,7 @@ static int switch_current_version(const char *path)
 int ver_changes(char *curr_path, char *parent_path)
 {
 	int res;
-	
+
 	char *command = malloc(19 + PATH_MAX + PATH_MAX);
 	sprintf(command, "diff %s %s >> diff.txt", curr_path, parent_path);
 	res = system(command);
@@ -616,11 +667,11 @@ char *get_parent_path(char *path, char *curr_vnum) {
 		temp = temp2;
 	}
 	free(temp2);
-	
+
 	int final_num = atoi(temp);
 	char final_num_str[PATH_MAX];
 	sprintf(final_num_str, "%d", final_num-1);
-	
+
 	strcat(parent_path, final_num_str);
 	return parent_path;
 }
@@ -1133,11 +1184,11 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 				// Construct the parent's path
 				char *parent_path = get_parent_path((char *) path, meta.curr_vnum);
 
-				// Get most recent (currently open) version's file path				
+				// Get most recent (currently open) version's file path
 				char *child_path = get_curr_verr_path(path);
 				int res = ver_changes(child_path, parent_path);
-				
-				// If new file's changes are too small 
+
+				// If new file's changes are too small
 				if (res < meta.size_freq) {
 					// that file must be removed and all changes written to parent file
 					size_t child_sz = lseek(fi->fh, 0, SEEK_END);
@@ -1146,7 +1197,7 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 						printf("couldn't open child file\n");
 						return -1;
 					}
-					
+
 					res = lseek(fi->fh, 0, SEEK_SET);
 					if (res < 0) {
 						printf("Couldn't seek from child file\n");
@@ -1307,3 +1358,4 @@ int main(int argc, char *argv[])
 	umask(0);
 	return fuse_main(argc, argv, &studentfs_oper, NULL);
 }
+     
