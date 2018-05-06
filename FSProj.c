@@ -1204,7 +1204,7 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 					}
 
 					char child_buf[child_sz];
-					fread(child_buf, 1, child_sz, child);
+					res = fread(child_buf, 1, child_sz, child);
 					if (res < 0) {
 						printf("Couldn't read from child file\n");
 						return -errno;
