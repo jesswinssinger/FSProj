@@ -299,7 +299,7 @@ static int mk_sdir(const char* path)
 	// Create metadata file
 	mk_metadata_file(path);
 	
-	if (access(orig_file, F_OK) != -1) {
+	if (access(orig_file, F_OK) == -1) {
 		char *file_path = get_file_path(path);
 		res = open(file_path, O_CREAT | O_RDWR, 0755 | S_IRWXU);
 		if (res < 0) {
