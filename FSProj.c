@@ -287,7 +287,10 @@ char *_get_next_ver(const char *path, char *vnum)
 	// Split the tokens by the delimiter .
 	int token_i = 0;
 	char *res = strtok(vnum, ".");
+	#ifdef DEBUG
 	printf("Res is %s\n", res);
+	#endif
+	
 	if (res != NULL) {
 		strcpy(tokens[token_i], res);
 		token_i++;
@@ -1118,8 +1121,6 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 		if ((fi->flags & O_WRONLY) == O_WRONLY) {
 			struct metadata meta;
 			get_metadata(path, &meta);
-			printf("got meta\n");
-			sleep(1);			
 			// Get final number off of vnum
 			int final_num = 0;
 			char *temp = strtok(meta.curr_vnum, ".");
@@ -1127,13 +1128,9 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 				final_num = atoi((const char *) temp);
 				temp = strtok(NULL, ".");
 			}
-			printf("got final num\n");
-			sleep(1);
 
 			// If there are no other children
 			if (final_num > 1) {
-				printf("Only child case\n");
-				sleep(2);
 				// Construct the parent's path
 				char *parent_path = get_parent_path((char *) path, meta.curr_vnum);
 
@@ -1142,12 +1139,9 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 				int res = ver_changes(child_path, parent_path);
 				
 				// If new file's changes are too small 
-				printf("res is %d, size_freq is %d\n", res, meta.size_freq);
-				printf("child path is %s\n", child_path);
 				if (res < meta.size_freq) {
 					// that file must be removed and all changes written to parent file
 					size_t child_sz = lseek(fi->fh, 0, SEEK_END);
-					sleep(2);
 					FILE *child = fopen(child_path, "r");
 					if (child == NULL) {
 						printf("couldn't open child file\n");
