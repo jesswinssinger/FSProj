@@ -196,22 +196,23 @@ static int mk_metadata_file(const char* sdir_path)
 	struct metadata md;
 	strcpy(md.curr_vnum, "1");
 	md.vcount = 1;
-
-	int freq_fd = open(SDIR_INFO_PATH, O_RDWR);
-	if (freq_fd == -1) {
-		md.size_freq = -1;
-		md.vmax = -1;
-	}
-	else {
-		int len = lseek(freq_fd, 0, SEEK_END);
-		char *buf = malloc(len);
-		lseek(freq_fd, 0, SEEK_SET);
-		res = read(freq_fd, buf, len);
-		close(freq_fd);
-
-		md.size_freq = atoi(strtok(buf, ";"));
-		md.vmax = atoi(strtok(NULL, ";"));
-	}
+	md.size_freq = 50;
+	md.vmax = -1;
+	// int freq_fd = open(SDIR_INFO_PATH, O_RDWR);
+	// if (freq_fd == -1) {
+	// 	md.size_freq = -1;
+	// 	md.vmax = -1;
+	// }
+	// else {
+	// 	int len = lseek(freq_fd, 0, SEEK_END);
+	// 	char *buf = malloc(len);
+	// 	lseek(freq_fd, 0, SEEK_SET);
+	// 	res = read(freq_fd, buf, len);
+	// 	close(freq_fd);
+    //
+	// 	md.size_freq = atoi(strtok(buf, ";"));
+	// 	md.vmax = atoi(strtok(NULL, ";"));
+	// }
 
 	// Create path for metadata
 	char mpath[PATH_MAX];
@@ -466,7 +467,6 @@ char *get_next_ver(const char *path)
  * modification time.
  * Metadata updates are all handled in update_metadata().
  */
-//TODO: test this!
 static int delete_oldest_sfile(const char* path, uint32_t vmax)
 {
 	int status;
@@ -482,7 +482,6 @@ static int delete_oldest_sfile(const char* path, uint32_t vmax)
 	if (status < 0)
 		return status;
 
-	// sprintf(command, "ls -1t | tail -n +%d | grep -v 'metadata'| xargs rm -f", vmax + 1);
 	sprintf(command, "ls -1t | grep -v 'metadata' | tail -1 | xargs rm -f");
 	#ifdef DEBUG
 	printf("	Deleting oldest sfile: %s\n", command);
@@ -593,7 +592,7 @@ static int snap(const char *path)
 	printf("Next path is %s\n", next_path);
 	#endif
 
-	int new_fd = open(next_path, O_CREAT | O_WRONLY, 0755 | S_IRWXU);
+	int new_fd = open(next_path, O_CREAT | O_WRONLY, S_IRWXU);
 	res = write(new_fd, buf, old_sz);
 	if (res < 0) {
 		printf("Error while making snapshot %d\n", errno);
@@ -1395,3 +1394,4 @@ int main(int argc, char *argv[])
 	umask(0);
 	return fuse_main(argc, argv, &studentfs_oper, NULL);
 }
+       

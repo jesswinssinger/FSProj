@@ -8,5 +8,5 @@ printf '' > "$1.SNA"
 
 if [ "$#" -eq 2 ]; then
     date >> ".$1.SDIR/log.txt"
-    echo $2 >> ".$1.SDIR/log.txt"
+    printf $2 >> ".$1.SDIR/log.txt"
 fi
