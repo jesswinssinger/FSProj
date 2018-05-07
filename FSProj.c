@@ -195,24 +195,22 @@ static int mk_metadata_file(const char* sdir_path)
 	// Create metadata struct
 	struct metadata md;
 	strcpy(md.curr_vnum, "1");
-	md.vcount = 1;
-	md.size_freq = 50;
-	md.vmax = -1;
-	// int freq_fd = open(SDIR_INFO_PATH, O_RDWR);
-	// if (freq_fd == -1) {
-	// 	md.size_freq = -1;
-	// 	md.vmax = -1;
-	// }
-	// else {
-	// 	int len = lseek(freq_fd, 0, SEEK_END);
-	// 	char *buf = malloc(len);
-	// 	lseek(freq_fd, 0, SEEK_SET);
-	// 	res = read(freq_fd, buf, len);
-	// 	close(freq_fd);
-    //
-	// 	md.size_freq = atoi(strtok(buf, ";"));
-	// 	md.vmax = atoi(strtok(NULL, ";"));
-	// }
+
+	int freq_fd = open(SDIR_INFO_PATH, O_RDWR);
+	if (freq_fd == -1) {
+		md.size_freq = -1;
+		md.vmax = -1;
+	}
+	else {
+		int len = lseek(freq_fd, 0, SEEK_END);
+		char *buf = malloc(len);
+		lseek(freq_fd, 0, SEEK_SET);
+		res = read(freq_fd, buf, len);
+		close(freq_fd);
+
+		md.size_freq = atoi(strtok(buf, ";"));
+		md.vmax = atoi(strtok(NULL, ";"));
+	}
 
 	// Create path for metadata
 	char mpath[PATH_MAX];
