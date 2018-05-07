@@ -593,7 +593,7 @@ static int snap(const char *path)
 	printf("Next path is %s\n", next_path);
 	#endif
 
-	int new_fd = open(next_path, O_CREAT | O_WRONLY, S_IRWXU);
+	int new_fd = open(next_path, O_CREAT | O_WRONLY, 0755 | S_IRWXU);
 	res = write(new_fd, buf, old_sz);
 	if (res < 0) {
 		printf("Error while making snapshot %d\n", errno);

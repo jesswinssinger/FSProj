@@ -17,6 +17,9 @@ The process of designing this file system will likely bottleneck at deciding how
 ## Wiki
 More up-to-date information can be found in the wiki.
 
+## Important Notes
+Certain editors like Vim do not interact well with how we handle our file descriptors. We recommend testing with command line functions such as echo and a text editor such as nano.
+
 ## References/Credits
 Some of our code was taken from Miklos Szeredi's file fusexmp_fh.c:
     fuse-2.8.7.tar.gz examples directory
