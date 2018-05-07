@@ -193,22 +193,25 @@ static int mk_metadata_file(const char* sdir_path)
 	int res;
 
 	// Create metadata struct
-	// TODO: make vmax and size_freq configurable with mkdir
-	// (requires revisiting mk_sdir)
-	int freq_fd = open(SDIR_INFO_PATH, O_RDONLY);
+	struct metadata md;
+	strcpy(md.curr_vnum, "1");
+	md.vcount = 1;
+
+	int freq_fd = open(SDIR_INFO_PATH, O_RDWR);
 	int len = lseek(freq_fd, 0, SEEK_END);
-	char *freq_buf = malloc(len);
+	if (len == 0) {
+		md.size_freq = -1;
+		md.vmax = -1;
+	}
+	char *buf = malloc(len);
 	lseek(freq_fd, 0, SEEK_SET);
-	read(freq_fd, freq_buf, len);
+	res = read(freq_fd, buf, len);
 	close(freq_fd);
 
-	struct metadata md;
-		strcpy(md.curr_vnum, "1");
-		md.vcount = 1;
-		md.vmax = -1;
-		md.size_freq = atoi(freq_buf);
+	md.size_freq = atoi(strtok(buf, ";"));
+	md.vmax = atoi(strtok(NULL, ";"));
 
-		// Create path for metadata
+	// Create path for metadata
 	char mpath[PATH_MAX];
 	strcpy(mpath, sdir_path);
 	strcat(mpath, METADATA_FILENAME);
@@ -236,18 +239,20 @@ static int mk_sdir(const char* path)
 	char *dir   = malloc(PATH_MAX);
 	strcpy(fname, path);
 	strcpy(dir, path);
-	fname = basename(fname);
 	dir   = dirname(dir);
+	fname = basename(fname);
+	fname = strtok(fname, ".");
+
+	// Check if file already exists. If so, we version this file.
 	char *orig_file = malloc(PATH_MAX);
 	strcpy(orig_file, dir);
 	strcat(orig_file, "/");
-
-	fname = strtok(fname, ".");
 	strcat(orig_file, fname);
 
 	printf("orig_file is %s\n", orig_file);
 	char *orig_buf = "";
 	size_t orig_size = 0;
+
 	if (access(orig_file, F_OK) != -1) {
 		// File exists, copy contents
 		int orig_res = 0;
@@ -296,7 +301,7 @@ static int mk_sdir(const char* path)
 	res = open(sfile_path, O_WRONLY);
 	int write_sz = write(res, orig_buf, orig_size);
 	if (write_sz < 0) {
-		printf("Couldn't write to file\n");
+		fprintf(stderr, "Couldn't write to file.\n");
 	}
 	close(res);
 
@@ -307,6 +312,7 @@ static int mk_sdir(const char* path)
 	// Create metadata file
 	mk_metadata_file(path);
 
+	// Create corresponding file
 	if (access(orig_file, F_OK) == -1) {
 		char *file_path = get_file_path(path);
 		res = open(file_path, O_CREAT | O_RDWR, 0755 | S_IRWXU);
@@ -320,7 +326,6 @@ static int mk_sdir(const char* path)
 		#endif
 		free(file_path);
 	}
-
 
 	close(res);
 
@@ -341,7 +346,7 @@ char *_get_next_ver(const char *path, char *vnum)
 	printf("Allocated space for char*s\n");
 	#endif
 
-	// Split the tokens by the delimiter .
+	// Split the tokens by the delimiter "."
 	int token_i = 0;
 	char *res = strtok(vnum, ".");
 	#ifdef DEBUG
@@ -365,6 +370,7 @@ char *_get_next_ver(const char *path, char *vnum)
 		token_i++;
 	}
 	strcpy(final_token, tokens[token_i-1]);
+
 	#ifdef DEBUG
 	printf("	Final token is %s\n", final_token);
 	printf("	token_i is %d\n", token_i);
@@ -461,12 +467,34 @@ char *get_next_ver(const char *path)
 //TODO: test this!
 static int delete_oldest_sfile(const char* path, uint32_t vmax)
 {
+	int status;
 	char command[39 + sizeof(int) + PATH_MAX];
 
 	char *sdir_path = get_sdir_path(path);
-	sprintf(command, "rm (ls %s -t | grep -v 'metadata' | tail -1)", sdir_path);
 
-	return system(command);
+	#ifdef DEBUG
+	printf("	sdir_path is: %s\n", sdir_path);
+	#endif
+	sprintf(command, "pushd %s", sdir_path);
+	status = system(command);
+	if (status < 0)
+		return status;
+
+	// sprintf(command, "ls -1t | tail -n +%d | grep -v 'metadata'| xargs rm -f", vmax + 1);
+	sprintf(command, "ls -1t | grep -v 'metadata' | tail -1 | xargs rm -f");
+	#ifdef DEBUG
+	printf("	Deleting oldest sfile: %s\n", command);
+	#endif
+	status = system(command);
+	if (status < 0)
+		return status;
+
+	#ifdef DEBUG
+	printf("	Successfully deleted file.\n");
+	#endif
+
+	status = system("popd");
+	return status;
 }
 
 /* Increment vcount by 1 and update curr_vnum. If the new vcount is past vmax,
@@ -535,11 +563,6 @@ static int snap(const char *path)
 
 	/* Get size of file being "snapped" */
 	int old_fd = get_sdir_file_fd(fpath);
-
-	#ifdef DEBUG
-	printf("Path fd is %d\n", old_fd);
-	#endif
-
 	off_t old_sz = lseek(old_fd, 0, SEEK_END);
 
 	#ifdef DEBUG
@@ -636,7 +659,7 @@ static int switch_current_version(const char *path)
 	return 0;
 }
 
-//TODO: TEST THIS!
+
 int ver_changes(char *curr_path, char *parent_path)
 {
 	int res;
@@ -1178,6 +1201,7 @@ static int studentfs_release(const char *path, struct fuse_file_info *fi)
 		if ((fi->flags & O_WRONLY) == O_WRONLY) {
 			struct metadata meta;
 			get_metadata(path, &meta);
+
 			// Get final number off of vnum
 			int final_num = 0;
 			char *temp = strtok(meta.curr_vnum, ".");
