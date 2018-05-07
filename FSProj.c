@@ -198,18 +198,20 @@ static int mk_metadata_file(const char* sdir_path)
 	md.vcount = 1;
 
 	int freq_fd = open(SDIR_INFO_PATH, O_RDWR);
-	int len = lseek(freq_fd, 0, SEEK_END);
-	if (len == 0) {
+	if (freq_fd == -1) {
 		md.size_freq = -1;
 		md.vmax = -1;
 	}
-	char *buf = malloc(len);
-	lseek(freq_fd, 0, SEEK_SET);
-	res = read(freq_fd, buf, len);
-	close(freq_fd);
+	else {
+		int len = lseek(freq_fd, 0, SEEK_END);
+		char *buf = malloc(len);
+		lseek(freq_fd, 0, SEEK_SET);
+		res = read(freq_fd, buf, len);
+		close(freq_fd);
 
-	md.size_freq = atoi(strtok(buf, ";"));
-	md.vmax = atoi(strtok(NULL, ";"));
+		md.size_freq = atoi(strtok(buf, ";"));
+		md.vmax = atoi(strtok(NULL, ";"));
+	}
 
 	// Create path for metadata
 	char mpath[PATH_MAX];
